@@ -1,0 +1,2152 @@
+<!DOCTYPE html>
+<!--
+================================================================================
+  BookTranslationLab — booktranslationlab_v1.0.html
+  Version: 1.0   |   Build date: 2026-11-07   |   Owner: Thinkezly (CJ)
+--------------------------------------------------------------------------------
+  Multi-book translation & publishing management system.
+  Single-file HTML app · Firebase Auth (email/password) · Cloud Firestore ·
+  Firebase Storage · Netlify hosting via GitHub.
+
+  Scope: the "Foundation release" feature set from the BookTranslationLab
+  technical specification (spec sections 1–17, pages 91–129).
+
+  CONFIGURE BEFORE DEPLOYING
+    1. Replace FIREBASE_CONFIG placeholders below (search: YOUR_API_KEY).
+    2. Set ORG_ID to the Firestore organization document ID.
+    3. Publish the Firestore + Storage rules shown on the in-app Setup page.
+    4. Bootstrap the organization doc and your admin membership (Setup page).
+    Until configured, the app runs in Demo mode (browser-local sample data).
+
+  CHANGELOG
+    v1.0 (2026-11-07) — Initial release
+      • Email/password sign-in, password reset, email verification, sign-out
+      • Membership-based roles (admin / reviewer), account activation toggle
+      • Authors, books (multi-book), translation projects (multi-language)
+      • Manual chapter management with ordering and per-reviewer status
+      • Reviewer 1 / Reviewer 2 assignment (reviewer1Id, reviewer2Id,
+        assignedReviewerIds array for array-contains queries)
+      • Review issues: reviewer submission, own-edit, admin resolution
+      • Project glossary management (read-only for reviewers)
+      • Manuscript uploads to Firebase Storage (DOCX/PDF/EPUB/TXT/MD, 25 MB)
+        with version records; authenticated downloads (no public URLs)
+      • Activity logging, admin activity log viewer
+      • Setup page: Firestore/Storage rules, indexes, firebase.json, CORS,
+        bootstrap docs, acceptance-test checklist, session error log
+      • Demo mode with sample data and simulated permission checks
+      • Sortable table columns, responsive layout, light/dark themes
+    Not included (deferred): AI/DeepL translation, extraction, chapter
+      splitting, side-by-side editor, quality scoring, EPUB generation, n8n.
+================================================================================
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="app-version" content="1.0">
+<title>BookTranslationLab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f6f3ee; --surface:#fffdf9; --surface-2:#f0ebe3; --ink:#1d2433; --ink-2:#3c4458;
+  --muted:#6e6a63; --line:#e2dbd0; --line-2:#cfc6b8;
+  --accent:#b8432f; --accent-ink:#ffffff; --accent-soft:#f6e1da;
+  --ok:#2f7a4f; --ok-soft:#e0f0e5; --warn:#a86a12; --warn-soft:#f8ecd4;
+  --bad:#b3261e; --bad-soft:#f9dedb; --info:#2b5c9e; --info-soft:#dfe8f5;
+  --shadow:0 1px 2px rgba(29,36,51,.06),0 8px 24px rgba(29,36,51,.06);
+  --serif:"Source Serif 4",Georgia,serif; --sans:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#14171e; --surface:#1c2029; --surface-2:#232835; --ink:#ece7df; --ink-2:#c9c3b8;
+    --muted:#9a948a; --line:#2e3442; --line-2:#3d4455;
+    --accent:#e2735c; --accent-ink:#1a1310; --accent-soft:#3a2420;
+    --ok:#6cc08d; --ok-soft:#1d3327; --warn:#e0a94f; --warn-soft:#3a2d17;
+    --bad:#f08178; --bad-soft:#3d2120; --info:#86aee6; --info-soft:#1e2a3d;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.25);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#14171e; --surface:#1c2029; --surface-2:#232835; --ink:#ece7df; --ink-2:#c9c3b8;
+  --muted:#9a948a; --line:#2e3442; --line-2:#3d4455;
+  --accent:#e2735c; --accent-ink:#1a1310; --accent-soft:#3a2420;
+  --ok:#6cc08d; --ok-soft:#1d3327; --warn:#e0a94f; --warn-soft:#3a2d17;
+  --bad:#f08178; --bad-soft:#3d2120; --info:#86aee6; --info-soft:#1e2a3d;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.25);
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+h1,h2,h3{font-family:var(--serif);font-weight:600;letter-spacing:-.01em;margin:0}
+h1{font-size:28px;line-height:1.2} h2{font-size:20px} h3{font-size:16px}
+a{color:var(--accent)}
+code,.mono{font-family:var(--mono);font-size:12.5px}
+button,input,select,textarea{font:inherit;color:inherit}
+.hidden{display:none!important}
+
+/* ---------- buttons & inputs ---------- */
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line-2);background:var(--surface);padding:7px 13px;border-radius:8px;cursor:pointer;font-weight:500;font-size:14px;white-space:nowrap;text-decoration:none;color:var(--ink)}
+.btn:hover{border-color:var(--ink-2)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(1.06)}
+.btn.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 40%,var(--line))}
+.btn.ghost{border-color:transparent;background:transparent}
+.btn.sm{padding:4px 9px;font-size:13px}
+.btn:disabled{opacity:.55;cursor:not-allowed}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+label.f{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:500;color:var(--ink-2)}
+label.f .help{font-weight:400;color:var(--muted);font-size:12px}
+input[type=text],input[type=email],input[type=password],input[type=number],input[type=search],select,textarea{width:100%;background:var(--surface);border:1px solid var(--line-2);border-radius:8px;padding:8px 10px;font-size:14px;outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+textarea{min-height:84px;resize:vertical}
+input[type=file]{font-size:13px}
+
+/* ---------- login / gate ---------- */
+.gate{min-height:100vh;display:grid;place-items:center;padding:24px 16px}
+.gate-card{width:100%;max-width:420px;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:30px 28px}
+.brand{display:flex;align-items:center;gap:10px}
+.brand-mark{width:34px;height:34px;border-radius:8px;background:var(--ink);color:var(--bg);display:grid;place-items:center;font-family:var(--serif);font-weight:700;font-size:17px;flex:none}
+.brand-name{font-family:var(--serif);font-weight:700;font-size:19px;letter-spacing:-.01em}
+.brand-ver{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.gate-card form{display:flex;flex-direction:column;gap:14px;margin-top:22px}
+.gate-sub{color:var(--muted);font-size:14px;margin-top:14px}
+.demo-users{display:grid;gap:8px;margin-top:18px}
+.demo-users .btn{justify-content:space-between}
+.demo-users .btn small{color:var(--muted);font-weight:400}
+
+/* ---------- shell ---------- */
+.shell{display:grid;grid-template-columns:248px 1fr;min-height:100vh}
+.side{background:var(--surface);border-right:1px solid var(--line);padding:18px 14px;display:flex;flex-direction:column;gap:18px;position:sticky;top:0;height:100vh;overflow-y:auto}
+.nav{display:flex;flex-direction:column;gap:2px}
+.nav-h{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);padding:10px 10px 4px;font-weight:600}
+.nav a{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:7px;color:var(--ink-2);text-decoration:none;font-size:14px}
+.nav a:hover{background:var(--surface-2)}
+.nav a.on{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.nav a .n{margin-left:auto;font-size:11px;font-family:var(--mono);color:var(--muted)}
+.nav svg{width:16px;height:16px;flex:none;opacity:.8}
+.side-foot{margin-top:auto;border-top:1px solid var(--line);padding-top:14px;font-size:13px}
+.who{display:flex;flex-direction:column;gap:2px;margin-bottom:10px}
+.who b{font-weight:600}
+.who span{color:var(--muted);font-size:12px;word-break:break-all}
+.main-wrap{min-width:0;display:flex;flex-direction:column}
+.topbar{display:none;align-items:center;gap:10px;padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20}
+.banner{padding:9px 16px;font-size:13.5px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+.banner.demo{background:var(--info-soft);color:var(--info)}
+.banner.warn{background:var(--warn-soft);color:var(--warn)}
+main{padding:28px 32px 60px;max-width:1280px;width:100%}
+.page-head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:22px}
+.page-head p{margin:4px 0 0;color:var(--muted)}
+.crumbs{font-size:13px;color:var(--muted);margin-bottom:6px}
+.crumbs a{color:var(--muted)}
+
+/* ---------- cards / stats ---------- */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:18px 20px}
+.card + .card{margin-top:16px}
+.grid > .card + .card{margin-top:0}
+.card-h{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+.grid{display:grid;gap:16px}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.g-dash{grid-template-columns:minmax(0,1.6fr) minmax(0,1fr)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px}
+.stat .k{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.stat .v{font-family:var(--serif);font-size:30px;font-weight:600;line-height:1.1;margin-top:4px}
+.stat .s{font-size:12px;color:var(--muted)}
+dl.meta{display:grid;grid-template-columns:minmax(120px,max-content) 1fr;gap:8px 18px;margin:0;font-size:14px}
+dl.meta dt{color:var(--muted)}
+dl.meta dd{margin:0;word-break:break-word}
+.empty{padding:28px 12px;text-align:center;color:var(--muted);font-size:14px}
+.note{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:12px 14px;font-size:13.5px;color:var(--ink-2)}
+.note b{color:var(--ink)}
+.progress{height:7px;background:var(--surface-2);border-radius:99px;overflow:hidden}
+.progress > i{display:block;height:100%;background:var(--ok);border-radius:99px}
+.proj-card{display:flex;flex-direction:column;gap:10px}
+.proj-card h3 a{color:var(--ink);text-decoration:none}
+.proj-card h3 a:hover{color:var(--accent)}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+
+/* ---------- chips ---------- */
+.chip{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:500;background:var(--surface-2);color:var(--ink-2);border:1px solid var(--line);white-space:nowrap}
+.chip.ok{background:var(--ok-soft);color:var(--ok);border-color:transparent}
+.chip.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+.chip.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.chip.info{background:var(--info-soft);color:var(--info);border-color:transparent}
+.chip.accent{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+
+/* ---------- tables ---------- */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600;background:var(--surface-2);white-space:nowrap}
+tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:color-mix(in srgb,var(--surface-2) 55%,transparent)}
+.th-sort{background:none;border:none;padding:0;cursor:pointer;font:inherit;color:inherit;text-transform:inherit;letter-spacing:inherit;display:inline-flex;gap:4px;align-items:center}
+.th-sort .ar{font-size:10px;opacity:.45}
+.th-sort.on .ar{opacity:1;color:var(--accent)}
+td .t-title{font-weight:600}
+td .t-sub{font-size:12.5px;color:var(--muted)}
+td.act{white-space:nowrap;text-align:right}
+td a.rowlink{color:var(--ink);font-weight:600;text-decoration:none}
+td a.rowlink:hover{color:var(--accent);text-decoration:underline}
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.toolbar input[type=search]{max-width:280px}
+.toolbar select{width:auto}
+
+/* ---------- tabs ---------- */
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:18px;overflow-x:auto}
+.tabs a{padding:9px 14px;text-decoration:none;color:var(--muted);font-weight:500;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap;font-size:14px}
+.tabs a.on{color:var(--ink);border-bottom-color:var(--accent)}
+.tabs a .n{font-family:var(--mono);font-size:11px;margin-left:4px;color:var(--muted)}
+
+/* ---------- modal / toast ---------- */
+.modal-bg{position:fixed;inset:0;background:rgba(15,18,25,.5);display:grid;place-items:center;padding:16px;z-index:100;overflow-y:auto}
+.modal{width:100%;max-width:640px;background:var(--surface);border-radius:14px;box-shadow:var(--shadow);border:1px solid var(--line);max-height:calc(100vh - 32px);display:flex;flex-direction:column}
+.modal-h{padding:18px 22px 0;display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.modal-b{padding:18px 22px;overflow-y:auto}
+.modal-f{padding:14px 22px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.form-grid .full{grid-column:1/-1}
+.form-err{color:var(--bad);font-size:13.5px;margin-top:12px;background:var(--bad-soft);padding:9px 12px;border-radius:8px}
+.toasts{position:fixed;right:16px;bottom:16px;display:flex;flex-direction:column;gap:8px;z-index:200;max-width:min(380px,calc(100vw - 32px))}
+.toast{background:var(--ink);color:var(--bg);padding:11px 14px;border-radius:9px;font-size:14px;box-shadow:var(--shadow);animation:tin .18s ease-out}
+.toast.bad{background:var(--bad);color:#fff}
+.toast.ok{background:var(--ok);color:#fff}
+@keyframes tin{from{transform:translateY(8px);opacity:0}}
+.upbar{position:fixed;left:50%;transform:translateX(-50%);bottom:16px;background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow);border-radius:10px;padding:10px 14px;width:min(360px,calc(100vw - 32px));z-index:150;font-size:13px}
+.upbar .progress{margin-top:6px}
+.upbar .progress > i{background:var(--accent)}
+pre.code{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:14px;overflow:auto;font-family:var(--mono);font-size:12.5px;line-height:1.55;max-height:520px;margin:0;white-space:pre}
+.check-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column}
+.check-list li{display:flex;gap:10px;align-items:flex-start;padding:9px 2px;border-bottom:1px solid var(--line);font-size:14px}
+.check-list li:last-child{border-bottom:none}
+.check-list input{margin-top:3px;accent-color:var(--accent)}
+.check-list .exp{margin-left:auto;font-size:12px;color:var(--muted);white-space:nowrap}
+.loading{padding:40px;text-align:center;color:var(--muted)}
+.diff-box{background:var(--surface-2);border-radius:8px;padding:10px 12px;font-size:14px;white-space:pre-wrap;word-break:break-word}
+.diff-lbl{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600;margin:12px 0 4px}
+
+/* ---------- responsive ---------- */
+@media (max-width: 900px){
+  .shell{grid-template-columns:1fr}
+  .side{position:fixed;left:0;top:0;bottom:0;width:270px;z-index:60;transform:translateX(-100%);transition:transform .2s;box-shadow:var(--shadow)}
+  .side.open{transform:none}
+  .topbar{display:flex}
+  main{padding:20px 16px 60px}
+  .g2,.g3,.g-dash{grid-template-columns:minmax(0,1fr)}
+  .banner{display:block}
+  .check-list .exp{white-space:normal;text-align:right}
+  .scrim{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:55}
+}
+@media (max-width: 720px){
+  .form-grid{grid-template-columns:1fr}
+  .tbl-wrap.cards{border:none;background:transparent}
+  .tbl-wrap.cards table,.tbl-wrap.cards tbody,.tbl-wrap.cards tr,.tbl-wrap.cards td{display:block;width:100%}
+  .tbl-wrap.cards thead{display:none}
+  .tbl-wrap.cards tr{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);margin-bottom:10px;padding:6px 0}
+  .tbl-wrap.cards td{border:none;padding:5px 14px;display:flex;gap:12px;justify-content:space-between}
+  .tbl-wrap.cards td::before{content:attr(data-label);font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600;flex:none}
+  .tbl-wrap.cards td.act{justify-content:flex-end}
+  .tbl-wrap.cards td.act::before{content:none}
+  .tbl-wrap.cards td > .cv{text-align:right;min-width:0;overflow-wrap:anywhere}
+  h1{font-size:24px}
+  dl.meta{grid-template-columns:1fr}
+  dl.meta dt{margin-top:6px}
+}
+</style>
+</head>
+<body>
+<div id="root"><div class="loading">Loading BookTranslationLab…</div></div>
+<div class="toasts" id="toasts"></div>
+
+<!-- ======================= Embedded deployment files ======================= -->
+<script type="text/plain" id="tpl-firestore-rules">rules_version = '2';
+// BookTranslationLab v1.0 — firestore.rules
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function memberPath(orgId) {
+      return /databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid);
+    }
+    function isMember(orgId) { return signedIn() && exists(memberPath(orgId)); }
+    function member(orgId) { return get(memberPath(orgId)).data; }
+    function isActiveMember(orgId) { return isMember(orgId) && member(orgId).status == 'active'; }
+    function isAdmin(orgId) { return isActiveMember(orgId) && member(orgId).role == 'admin'; }
+
+    function projectPath(orgId, projectId) {
+      return /databases/$(database)/documents/organizations/$(orgId)/translationProjects/$(projectId);
+    }
+    function project(orgId, projectId) { return get(projectPath(orgId, projectId)).data; }
+    function isReviewer1(orgId, projectId) {
+      return isActiveMember(orgId) && exists(projectPath(orgId, projectId))
+        && project(orgId, projectId).reviewer1Id == request.auth.uid;
+    }
+    function isReviewer2(orgId, projectId) {
+      return isActiveMember(orgId) && exists(projectPath(orgId, projectId))
+        && project(orgId, projectId).reviewer2Id == request.auth.uid;
+    }
+    function isAssignedReviewer(orgId, projectId) {
+      return isReviewer1(orgId, projectId) || isReviewer2(orgId, projectId);
+    }
+    function onlyChanged(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+    function reviewStatus(v) {
+      return v in ['pending', 'in_progress', 'approved', 'changes_requested'];
+    }
+
+    // ORGANIZATION (created manually in the console)
+    match /organizations/{orgId} {
+      allow read: if isActiveMember(orgId);
+      allow update: if isAdmin(orgId);
+      allow create, delete: if false;
+    }
+
+    // ORGANIZATION MEMBERS (doc ID = Firebase Auth UID)
+    match /organizations/{orgId}/members/{userId} {
+      allow read: if isAdmin(orgId) || (signedIn() && request.auth.uid == userId);
+      allow create, update: if isAdmin(orgId)
+        && request.resource.data.uid == userId
+        && request.resource.data.role in ['admin', 'reviewer']
+        && request.resource.data.status in ['active', 'inactive'];
+      allow delete: if isAdmin(orgId) && request.auth.uid != userId;
+    }
+
+    // AUTHORS
+    match /organizations/{orgId}/authors/{authorId} {
+      allow read: if isActiveMember(orgId);
+      allow write: if isAdmin(orgId);
+    }
+
+    // ORIGINAL BOOK RECORDS
+    match /organizations/{orgId}/books/{bookId} {
+      allow read: if isActiveMember(orgId);
+      allow write: if isAdmin(orgId);
+    }
+
+    // TRANSLATION PROJECTS
+    // Reviewers query with where('assignedReviewerIds','array-contains',uid).
+    match /organizations/{orgId}/translationProjects/{projectId} {
+      allow read: if isAdmin(orgId)
+        || (isActiveMember(orgId) && request.auth.uid in resource.data.assignedReviewerIds);
+      allow create, update, delete: if isAdmin(orgId);
+
+      // CHAPTERS — admin controls content; each reviewer may set only their own status
+      match /chapters/{chapterId} {
+        allow read: if isAdmin(orgId) || isAssignedReviewer(orgId, projectId);
+        allow create, delete: if isAdmin(orgId);
+        allow update: if isAdmin(orgId)
+          || (isReviewer1(orgId, projectId) && onlyChanged(['reviewer1Status', 'updatedAt'])
+              && reviewStatus(request.resource.data.reviewer1Status))
+          || (isReviewer2(orgId, projectId) && onlyChanged(['reviewer2Status', 'updatedAt'])
+              && reviewStatus(request.resource.data.reviewer2Status));
+      }
+
+      // GLOSSARY
+      match /glossary/{termId} {
+        allow read: if isAdmin(orgId) || isAssignedReviewer(orgId, projectId);
+        allow write: if isAdmin(orgId);
+      }
+
+      // REVIEW ISSUES
+      match /reviewIssues/{issueId} {
+        allow read: if isAdmin(orgId) || isAssignedReviewer(orgId, projectId);
+        allow create: if (isAdmin(orgId) || isAssignedReviewer(orgId, projectId))
+          && request.resource.data.reviewerId == request.auth.uid
+          && request.resource.data.status == 'open';
+        allow update: if isAdmin(orgId)
+          || (isAssignedReviewer(orgId, projectId)
+              && resource.data.reviewerId == request.auth.uid
+              && request.resource.data.reviewerId == request.auth.uid
+              && resource.data.status in ['open', 'withdrawn']
+              && request.resource.data.status in ['open', 'withdrawn']
+              && onlyChanged(['suggestedCorrection', 'notes', 'status', 'updatedAt']));
+        allow delete: if isAdmin(orgId);
+      }
+
+      // DOCUMENT VERSIONS (file metadata; files live in Storage)
+      match /versions/{versionId} {
+        allow read: if isAdmin(orgId) || isAssignedReviewer(orgId, projectId);
+        allow write: if isAdmin(orgId);
+      }
+    }
+
+    // ACTIVITY LOGS — append-only; written as the signed-in user, read by admin.
+    // (Move to a trusted Cloud Function in a later release.)
+    match /organizations/{orgId}/activityLogs/{logId} {
+      allow read: if isAdmin(orgId);
+      allow create: if isActiveMember(orgId)
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.createdAt == request.time;
+      allow update, delete: if false;
+    }
+
+    // DENY UNMATCHED DOCUMENTS
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+</script>
+<script type="text/plain" id="tpl-storage-rules">rules_version = '2';
+// BookTranslationLab v1.0 — storage.rules
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function signedIn() { return request.auth != null; }
+    function memberPath(orgId) {
+      return /databases/(default)/documents/organizations/$(orgId)/members/$(request.auth.uid);
+    }
+    function isActiveMember(orgId) {
+      return signedIn()
+        && firestore.exists(memberPath(orgId))
+        && firestore.get(memberPath(orgId)).data.status == 'active';
+    }
+    function isAdmin(orgId) {
+      return isActiveMember(orgId)
+        && firestore.get(memberPath(orgId)).data.role == 'admin';
+    }
+    function isAssignedReviewer(orgId, projectId) {
+      let project = firestore.get(
+        /databases/(default)/documents/organizations/$(orgId)/translationProjects/$(projectId)
+      ).data;
+      return isActiveMember(orgId)
+        && (project.reviewer1Id == request.auth.uid || project.reviewer2Id == request.auth.uid);
+    }
+    function validUpload() {
+      return request.resource != null
+        && request.resource.size < 25 * 1024 * 1024
+        && request.resource.contentType in [
+          'application/pdf',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'application/epub+zip',
+          'text/plain',
+          'text/markdown'
+        ];
+    }
+
+    // ORIGINAL MASTER MANUSCRIPTS — administrator only
+    match /organizations/{orgId}/books/{bookId}/source/{fileName} {
+      allow read: if isAdmin(orgId);
+      allow create, update: if isAdmin(orgId) && validUpload();
+      allow delete: if isAdmin(orgId);
+    }
+
+    // TRANSLATION PROJECT FILES
+    // folders: source, ai_drafts, reviewer_1, reviewer_2, approved, exports
+    match /organizations/{orgId}/translationProjects/{projectId}/{folder}/{fileName} {
+      allow read: if isAdmin(orgId)
+        || (folder != 'exports' && isAssignedReviewer(orgId, projectId));
+      // Reviewer uploads are not enabled in this release.
+      allow create, update: if isAdmin(orgId) && validUpload();
+      allow delete: if isAdmin(orgId);
+    }
+
+    // DENY EVERYTHING ELSE
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
+</script>
+<script type="text/plain" id="tpl-indexes">{
+  "indexes": [
+    { "collectionGroup": "books", "queryScope": "COLLECTION",
+      "fields": [ { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "authors", "queryScope": "COLLECTION",
+      "fields": [ { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "lastName", "order": "ASCENDING" } ] },
+    { "collectionGroup": "translationProjects", "queryScope": "COLLECTION",
+      "fields": [ { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "reviewIssues", "queryScope": "COLLECTION",
+      "fields": [ { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "versions", "queryScope": "COLLECTION",
+      "fields": [ { "fieldPath": "chapterId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] }
+  ],
+  "fieldOverrides": []
+}
+</script>
+<script type="text/plain" id="tpl-firebase-json">{
+  "firestore": {
+    "rules": "firebase/firestore.rules",
+    "indexes": "firebase/firestore.indexes.json"
+  },
+  "storage": {
+    "rules": "firebase/storage.rules"
+  },
+  "emulators": {
+    "auth": { "port": 9099 },
+    "firestore": { "port": 8080 },
+    "storage": { "port": 9199 },
+    "ui": { "enabled": true }
+  }
+}
+</script>
+<script type="text/plain" id="tpl-cors">[
+  {
+    "origin": ["https://YOUR-SITE.netlify.app", "http://localhost:5500", "http://127.0.0.1:5500"],
+    "method": ["GET"],
+    "maxAgeSeconds": 3600
+  }
+]
+
+# Authenticated downloads use the Storage SDK (getBlob), which needs CORS on the bucket:
+#   gsutil cors set cors.json gs://YOUR_PROJECT_ID.firebasestorage.app
+</script>
+
+<!-- ============================== Application ============================== -->
+<script type="module">
+/* ==========================================================================
+   BookTranslationLab v1.0 — application module
+   ========================================================================== */
+
+/* ---------- CONFIGURATION ---------- */
+const APP = { name: 'BookTranslationLab', version: '1.0', build: '2026-11-07' };
+
+// Replace these placeholders with the web app config from
+// Firebase Console → Project settings → Your apps → Web app.
+const FIREBASE_CONFIG = {
+  apiKey: 'YOUR_API_KEY',
+  authDomain: 'YOUR_PROJECT_ID.firebaseapp.com',
+  projectId: 'YOUR_PROJECT_ID',
+  storageBucket: 'YOUR_PROJECT_ID.firebasestorage.app',
+  messagingSenderId: 'YOUR_SENDER_ID',
+  appId: 'YOUR_APP_ID'
+};
+// Firestore document ID of your organization: organizations/{ORG_ID}
+const ORG_ID = 'booktranslationlab';
+// Set true to use the local Firebase Emulator Suite (auth 9099, firestore 8080, storage 9199).
+const USE_EMULATORS = false;
+const SDK = 'https://www.gstatic.com/firebasejs/10.12.2';
+const IS_CONFIGURED = !String(FIREBASE_CONFIG.apiKey).startsWith('YOUR_');
+
+/* ---------- DOMAIN CONSTANTS ---------- */
+const FILE_TYPES = {
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  pdf: 'application/pdf',
+  epub: 'application/epub+zip',
+  txt: 'text/plain',
+  md: 'text/markdown'
+};
+const MAX_UPLOAD = 25 * 1024 * 1024;
+const AUTHOR_STATUS = ['prospect', 'contacted', 'interested', 'contracted', 'inactive'];
+const BOOK_STATUS = ['active', 'on_hold', 'archived'];
+const RIGHTS_STATUS = ['not_requested', 'permission_pending', 'permission_granted', 'contracted', 'denied', 'public_domain'];
+const GENRES = ['business', 'self_help', 'fiction', 'non_fiction', 'memoir', 'religion', 'health', 'education', 'children', 'other'];
+const PROJECT_STATUS = ['planning', 'in_translation', 'in_review', 'revisions', 'approved', 'published', 'on_hold', 'archived'];
+const METHODS = [['manual', 'Manual'], ['human_translation', 'Human translation'], ['ai_assisted', 'AI-assisted (future release)', true]];
+const CHAPTER_STATUS = ['not_started', 'in_translation', 'translated', 'in_review', 'revisions_needed', 'approved'];
+const REVIEW_STATUS = ['pending', 'in_progress', 'approved', 'changes_requested'];
+const FINAL_STATUS = ['pending', 'approved', 'rejected'];
+const ISSUE_TYPES = ['accuracy', 'terminology', 'grammar', 'style', 'consistency', 'omission', 'formatting', 'cultural', 'other'];
+const SEVERITY = ['minor', 'major', 'critical'];
+const ISSUE_STATUS = ['open', 'accepted', 'resolved', 'rejected', 'withdrawn'];
+const GLOSSARY_STATUS = ['proposed', 'approved', 'rejected'];
+const FOLDERS = [
+  ['source', 'Source chapters', 'source'],
+  ['ai_drafts', 'AI / first drafts', 'ai_draft'],
+  ['reviewer_1', 'Reviewer 1 documents', 'review_1'],
+  ['reviewer_2', 'Reviewer 2 documents', 'review_2'],
+  ['approved', 'Approved documents', 'approved'],
+  ['exports', 'Publishing exports (admin only)', 'export']
+];
+const VARIANTS = [
+  ['es-419', 'Spanish — Latin America (es-419)'], ['es-MX', 'Spanish — Mexico (es-MX)'],
+  ['es-US', 'Spanish — United States (es-US)'], ['es-ES', 'Spanish — Spain (es-ES)'],
+  ['pt-BR', 'Portuguese — Brazil (pt-BR)'], ['pt-PT', 'Portuguese — Portugal (pt-PT)'],
+  ['fr-FR', 'French — France (fr-FR)'], ['fr-CA', 'French — Canada (fr-CA)'],
+  ['de-DE', 'German — Germany (de-DE)'], ['it-IT', 'Italian — Italy (it-IT)'],
+  ['en-US', 'English — United States (en-US)'], ['en-GB', 'English — United Kingdom (en-GB)']
+];
+const SOURCE_LANGS = [['en', 'English'], ['es', 'Spanish'], ['pt', 'Portuguese'], ['fr', 'French'], ['de', 'German'], ['it', 'Italian']];
+const ACCEPTANCE_TESTS = [
+  ['Administrator login', 'Successful'], ['Incorrect password', 'Access denied'],
+  ['Reviewer 1 login', 'Successful'], ['Reviewer 2 login', 'Successful'],
+  ['Create new author', 'Successful'], ['Create new book', 'Successful'],
+  ['Create Spanish project', 'Successful'], ['Assign Reviewer 1', 'Successful'],
+  ['Assign Reviewer 2', 'Successful'], ['Upload DOCX manuscript', 'Successful'],
+  ['Upload unsupported file', 'Rejected'], ['Upload oversized file', 'Rejected'],
+  ['Reviewer views assigned project', 'Allowed'], ['Reviewer views unassigned project', 'Denied'],
+  ['Reviewer edits original book', 'Denied'], ['Reviewer submits correction', 'Allowed'],
+  ["Reviewer edits another reviewer's correction", 'Denied'],
+  ['Unauthenticated user accesses Firestore', 'Denied'],
+  ['Inactive member accesses project', 'Denied'], ['Administrator views all projects', 'Allowed']
+];
+const SETUP_STEPS = [
+  'Create BookTranslationLab Firebase project', 'Enable Firebase Authentication',
+  'Enable Email/Password provider', 'Create Cloud Firestore database',
+  'Create Firebase Storage bucket', 'Configure Firestore security rules',
+  'Configure Storage security rules', 'Register web application',
+  'Copy Firebase web configuration into FIREBASE_CONFIG', 'Create initial administrator account',
+  'Create initial organization and membership record', 'Set Storage CORS for authenticated downloads',
+  'Configure Firebase Emulator Suite'
+];
+
+/* ---------- UTILITIES ---------- */
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const uuid = () => (crypto.randomUUID ? crypto.randomUUID()
+  : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); }));
+const label = s => String(s ?? '').replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase());
+const opts = arr => arr.map(v => Array.isArray(v) ? v : [v, label(v)]);
+const pad3 = n => String(n).padStart(3, '0');
+const slug = s => String(s).toLowerCase().replace(/\.[^.]+$/, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 60) || 'file';
+const fmtBytes = b => b == null ? '—' : b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(1) + ' KB' : (b / 1048576).toFixed(1) + ' MB';
+const num = v => (v == null || v === '' ? '—' : Number(v).toLocaleString());
+function toDate(v) { if (!v) return null; if (typeof v.toDate === 'function') return v.toDate(); const d = new Date(v); return isNaN(d) ? null : d; }
+function fmtDate(v, time = true) {
+  const d = toDate(v); if (!d) return '—';
+  return d.toLocaleString(undefined, time ? { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' } : { month: 'short', day: 'numeric', year: 'numeric' });
+}
+const STATUS_TONE = {
+  active: 'ok', contracted: 'ok', approved: 'ok', resolved: 'ok', accepted: 'ok', permission_granted: 'ok', published: 'ok', public_domain: 'ok', translated: 'info',
+  interested: 'info', in_review: 'info', in_translation: 'info', in_progress: 'info', contacted: 'info',
+  permission_pending: 'warn', pending: 'warn', planning: 'warn', revisions: 'warn', revisions_needed: 'warn', changes_requested: 'warn', on_hold: 'warn', proposed: 'warn', open: 'accent', major: 'warn',
+  denied: 'bad', rejected: 'bad', inactive: 'bad', critical: 'bad', archived: '', withdrawn: '', minor: ''
+};
+const chip = s => s ? '<span class="chip ' + (STATUS_TONE[s] || '') + '">' + esc(label(s)) + '</span>' : '<span class="muted">—</span>';
+const variantName = v => (VARIANTS.find(x => x[0] === v) || [v, v])[1];
+const ls = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage unavailable */ } }
+};
+function cmp(a, b) {
+  const da = toDate(a), db = toDate(b);
+  if (a && b && typeof a === 'object' && da && db) return da - db;
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  if (a == null || a === '') return 1; if (b == null || b === '') return -1;
+  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+}
+class AppError extends Error { constructor(msg, code) { super(msg); this.code = code || 'app'; } }
+
+/* ---------- ERROR HANDLING ---------- */
+const ERR_MSG = {
+  'auth/invalid-credential': 'Incorrect email or password.',
+  'auth/wrong-password': 'Incorrect email or password.',
+  'auth/user-not-found': 'Incorrect email or password.',
+  'auth/invalid-email': 'That email address is not valid.',
+  'auth/too-many-requests': 'Too many attempts. Wait a few minutes or reset your password.',
+  'auth/user-disabled': 'This account has been disabled.',
+  'auth/network-request-failed': 'Network error. Check your connection.',
+  'permission-denied': 'Access denied. Your account does not have permission for this action.',
+  'storage/unauthorized': 'Access denied for this file. Upload rules allow DOCX, PDF, EPUB, TXT and MD under 25 MB.',
+  'storage/object-not-found': 'The file could not be found in Storage.',
+  'storage/canceled': 'Upload cancelled.',
+  'storage/retry-limit-exceeded': 'Upload timed out. Try again.',
+  'unavailable': 'Firestore is unreachable. Check your connection.',
+  'failed-precondition': 'This query needs a Firestore index. Open the browser console for the index link.',
+  'not-found': 'The record no longer exists.'
+};
+function friendly(e) {
+  if (e instanceof AppError) return e.message;
+  const code = e && e.code ? String(e.code).replace(/^firestore\//, '') : '';
+  if (ERR_MSG[code]) return ERR_MSG[code];
+  if (e && /Failed to fetch|NetworkError|CORS/i.test(e.message || '')) return 'Network or CORS error. If downloading, confirm Storage CORS is configured (see Setup).';
+  return (e && e.message) || 'Something went wrong.';
+}
+const errorLog = ls.get('btl_error_log', []);
+function logError(e, ctx) {
+  const entry = { at: new Date().toISOString(), ctx: ctx || '', code: (e && e.code) || '', message: (e && e.message) || String(e), version: APP.version };
+  errorLog.unshift(entry); errorLog.length = Math.min(errorLog.length, 50); ls.set('btl_error_log', errorLog);
+  console.error('[BTL]', ctx, e);
+}
+function fail(e, ctx) { logError(e, ctx); toast(friendly(e), 'bad'); }
+window.addEventListener('unhandledrejection', ev => logError(ev.reason, 'unhandled'));
+
+function toast(msg, type = '') {
+  const t = document.createElement('div'); t.className = 'toast ' + type; t.textContent = msg;
+  $('#toasts').appendChild(t); setTimeout(() => t.remove(), type === 'bad' ? 6000 : 3200);
+}
+
+/* ==========================================================================
+   DATA LAYER — Firebase adapter
+   ========================================================================== */
+async function createFirebaseApi() {
+  const [A, AU, FS, ST] = await Promise.all([
+    import(SDK + '/firebase-app.js'), import(SDK + '/firebase-auth.js'),
+    import(SDK + '/firebase-firestore.js'), import(SDK + '/firebase-storage.js')
+  ]);
+  const app = A.initializeApp(FIREBASE_CONFIG);
+  const auth = AU.getAuth(app), db = FS.getFirestore(app), st = ST.getStorage(app);
+  if (USE_EMULATORS) {
+    AU.connectAuthEmulator(auth, 'http://127.0.0.1:9099');
+    FS.connectFirestoreEmulator(db, '127.0.0.1', 8080);
+    ST.connectStorageEmulator(st, '127.0.0.1', 9199);
+  }
+  const base = 'organizations/' + ORG_ID;
+  const norm = s => ({ id: s.id, ...s.data() });
+  const d = (col, id) => FS.doc(db, base + '/' + col + '/' + id);
+  const mapUser = u => u ? { uid: u.uid, email: u.email, displayName: u.displayName, emailVerified: u.emailVerified } : null;
+  return {
+    mode: 'firebase',
+    ts: () => FS.serverTimestamp(),
+    onAuth: cb => AU.onAuthStateChanged(auth, u => cb(mapUser(u))),
+    signIn: (email, pw) => AU.signInWithEmailAndPassword(auth, email, pw),
+    signOut: () => AU.signOut(auth),
+    reset: email => AU.sendPasswordResetEmail(auth, email),
+    verify: () => AU.sendEmailVerification(auth.currentUser),
+    async getOrg() { const s = await FS.getDoc(FS.doc(db, base)); return s.exists() ? norm(s) : null; },
+    updateOrg: data => FS.updateDoc(FS.doc(db, base), data),
+    async list(col, o = {}) {
+      const c = [];
+      if (o.where) c.push(FS.where(...o.where));
+      if (o.orderBy) c.push(FS.orderBy(...o.orderBy));
+      if (o.limit) c.push(FS.limit(o.limit));
+      const s = await FS.getDocs(FS.query(FS.collection(db, base + '/' + col), ...c));
+      return s.docs.map(norm);
+    },
+    async get(col, id) { const s = await FS.getDoc(d(col, id)); return s.exists() ? norm(s) : null; },
+    async set(col, id, data) { await FS.setDoc(d(col, id), data); return id; },
+    update: (col, id, data) => FS.updateDoc(d(col, id), data),
+    remove: (col, id) => FS.deleteDoc(d(col, id)),
+    upload(path, file, contentType, onProg) {
+      return new Promise((res, rej) => {
+        const task = ST.uploadBytesResumable(ST.ref(st, path), file, { contentType });
+        task.on('state_changed', s => onProg && onProg(s.bytesTransferred / (s.totalBytes || 1)), rej, () => res(path));
+      });
+    },
+    download: path => ST.getBlob(ST.ref(st, path)),
+    removeFile: path => ST.deleteObject(ST.ref(st, path)).catch(e => { if (e.code !== 'storage/object-not-found') throw e; })
+  };
+}
+
+/* ==========================================================================
+   DATA LAYER — Demo adapter (browser-local; simulates the security rules)
+   ========================================================================== */
+function createDemoApi() {
+  const KEY = 'btl_demo_v1';
+  let store = ls.get(KEY, null);
+  if (!store) { store = seedDemo(); ls.set(KEY, store); }
+  const files = new Map();
+  let current = null, listener = null;
+  const save = () => ls.set(KEY, store);
+  const col = c => (store.cols[c] = store.cols[c] || {});
+  const clone = o => JSON.parse(JSON.stringify(o));
+  const deny = () => { const e = new Error('Missing or insufficient permissions.'); e.code = 'permission-denied'; throw e; };
+  const tick = () => new Promise(r => setTimeout(r, 60));
+
+  function guard(op, c, id, data, existing, o) {
+    if (!current) deny();
+    const m = col('members')[current.uid];
+    if (c === 'members' && op === 'read' && id === current.uid) return;
+    if (!m || m.status !== 'active') deny();
+    if (m.role === 'admin') return;
+    const parts = c.split('/'), top = parts[0];
+    if (top === 'activityLogs') { if (op === 'create' && data.userId === current.uid) return; deny(); }
+    if (top === 'authors' || top === 'books') { if (op === 'read' || op === 'list') return; deny(); }
+    if (top === 'org') { if (op === 'read') return; deny(); }
+    if (top === 'translationProjects') {
+      if (parts.length === 1 && op === 'list') {
+        if (o && o.where && o.where[0] === 'assignedReviewerIds' && o.where[2] === current.uid) return; deny();
+      }
+      const pid = parts.length === 1 ? id : parts[1];
+      const p = col('translationProjects')[pid];
+      if (!p || !(p.assignedReviewerIds || []).includes(current.uid)) deny();
+      if (op === 'read' || op === 'list') return;
+      if (parts.length === 1) deny();
+      const sub = parts[2], keys = Object.keys(data || {});
+      if (sub === 'chapters' && op === 'update') {
+        const k = p.reviewer1Id === current.uid ? 'reviewer1Status' : p.reviewer2Id === current.uid ? 'reviewer2Status' : null;
+        if (k && keys.every(x => x === k || x === 'updatedAt') && REVIEW_STATUS.includes(data[k])) return;
+      }
+      if (sub === 'reviewIssues') {
+        if (op === 'create' && data.reviewerId === current.uid && data.status === 'open') return;
+        if (op === 'update' && existing && existing.reviewerId === current.uid
+          && ['open', 'withdrawn'].includes(existing.status)
+          && keys.every(x => ['suggestedCorrection', 'notes', 'status', 'updatedAt'].includes(x))
+          && (!('status' in data) || ['open', 'withdrawn'].includes(data.status))) return;
+      }
+    }
+    deny();
+  }
+  function fileGuard(op, path) {
+    if (!current) deny();
+    const m = col('members')[current.uid];
+    if (!m || m.status !== 'active') deny();
+    if (m.role === 'admin') return;
+    if (op !== 'read') deny();
+    const p = path.split('/');
+    if (p[2] !== 'translationProjects' || p[4] === 'exports') deny();
+    const proj = col('translationProjects')[p[3]];
+    if (!proj || !(proj.reviewer1Id === current.uid || proj.reviewer2Id === current.uid)) deny();
+  }
+  const userOf = uid => { const m = col('members')[uid]; return m ? { uid, email: m.email, displayName: m.displayName, emailVerified: true } : { uid, email: uid + '@demo.local', displayName: 'Unregistered user', emailVerified: true }; };
+
+  return {
+    mode: 'demo',
+    ts: () => new Date().toISOString(),
+    onAuth(cb) { listener = cb; setTimeout(() => cb(current), 0); },
+    async signIn(uid) { await tick(); current = userOf(uid); listener && listener(current); },
+    async signOut() { current = null; listener && listener(null); },
+    async reset() { await tick(); },
+    async verify() { await tick(); },
+    async getOrg() { guard('read', 'org'); return clone(store.org); },
+    async updateOrg(d) { guard('update', 'org'); Object.assign(store.org, d); save(); },
+    async list(c, o = {}) {
+      await tick(); guard('list', c, null, null, null, o);
+      let rows = Object.entries(col(c)).map(([id, v]) => ({ id, ...clone(v) }));
+      if (o.where) {
+        const [f, op, val] = o.where;
+        rows = rows.filter(r => op === 'array-contains' ? (r[f] || []).includes(val) : op === '==' ? r[f] === val : op === '!=' ? r[f] !== val : true);
+      }
+      if (o.orderBy) { const [f, dir] = o.orderBy; rows.sort((a, b) => cmp(a[f], b[f]) * (dir === 'desc' ? -1 : 1)); }
+      if (o.limit) rows = rows.slice(0, o.limit);
+      return rows;
+    },
+    async get(c, id) { await tick(); guard('read', c, id); const v = col(c)[id]; return v ? { id, ...clone(v) } : null; },
+    async set(c, id, data) { await tick(); guard(col(c)[id] ? 'update' : 'create', c, id, data); col(c)[id] = clone(data); save(); return id; },
+    async update(c, id, data) {
+      await tick(); const ex = col(c)[id];
+      if (!ex) { const e = new Error('No document to update.'); e.code = 'not-found'; throw e; }
+      guard('update', c, id, data, ex); Object.assign(ex, clone(data)); save();
+    },
+    async remove(c, id) { await tick(); guard('delete', c, id); delete col(c)[id]; save(); },
+    async upload(path, file, contentType, onProg) {
+      fileGuard('write', path);
+      if (!Object.values(FILE_TYPES).includes(contentType) || file.size >= MAX_UPLOAD) { const e = new Error('Rejected by storage rules'); e.code = 'storage/unauthorized'; throw e; }
+      for (let i = 1; i <= 5; i++) { await tick(); onProg && onProg(i / 5); }
+      files.set(path, file); return path;
+    },
+    async download(path) {
+      fileGuard('read', path);
+      if (files.has(path)) return files.get(path);
+      return new Blob(['BookTranslationLab demo placeholder for ' + path + '\n\nDemo mode keeps uploaded files only for the current browser session.'], { type: 'text/plain' });
+    },
+    async removeFile(path) { fileGuard('write', path); files.delete(path); },
+    resetDemo() { try { localStorage.removeItem(KEY); } catch { /* ignore */ } store = seedDemo(); save(); }
+  };
+}
+
+function seedDemo() {
+  const now = Date.now(), t = days => new Date(now - days * 864e5).toISOString();
+  const A = 'demo-admin', R1 = 'demo-reviewer-1', R2 = 'demo-reviewer-2', R3 = 'demo-inactive';
+  const a1 = uuid(), a2 = uuid(), b1 = uuid(), b2 = uuid(), p1 = uuid(), p2 = uuid();
+  const c1 = uuid(), c2 = uuid(), c3 = uuid();
+  const cols = {
+    members: {
+      [A]: { uid: A, email: 'admin@thinkezly.demo', displayName: 'CJ (Administrator)', role: 'admin', status: 'active', createdAt: t(30) },
+      [R1]: { uid: R1, email: 'reviewer1@example.com', displayName: 'Reviewer One', role: 'reviewer', status: 'active', createdAt: t(20) },
+      [R2]: { uid: R2, email: 'reviewer2@example.com', displayName: 'Reviewer Two', role: 'reviewer', status: 'active', createdAt: t(20) },
+      [R3]: { uid: R3, email: 'former@example.com', displayName: 'Former Reviewer', role: 'reviewer', status: 'inactive', createdAt: t(40) }
+    },
+    authors: {
+      [a1]: { firstName: 'Jane', lastName: 'Author', email: 'jane@example.com', website: 'https://example.com', biography: 'Marketing consultant and author of practical business guides.', country: 'United States', status: 'contracted', createdAt: t(28), updatedAt: t(28) },
+      [a2]: { firstName: 'Marcus', lastName: 'Webb', email: 'marcus@example.com', website: '', biography: '', country: 'Canada', status: 'interested', createdAt: t(12), updatedAt: t(12) }
+    },
+    books: {
+      [b1]: { title: 'The Lead Generation Playbook', subtitle: 'Building a Pipeline That Lasts', authorId: a1, genre: 'business', sourceLanguage: 'en', sourceFormat: 'docx', wordCount: 5000, copyrightOwner: 'Jane Author', rightsStatus: 'permission_granted', sourceFilePath: '', status: 'active', createdAt: t(27), updatedAt: t(27) },
+      [b2]: { title: 'Quiet Leadership', subtitle: '', authorId: a2, genre: 'self_help', sourceLanguage: 'en', sourceFormat: 'pdf', wordCount: 42000, copyrightOwner: 'Marcus Webb', rightsStatus: 'permission_pending', sourceFilePath: '', status: 'active', createdAt: t(10), updatedAt: t(10) }
+    },
+    translationProjects: {
+      [p1]: { organizationId: ORG_ID, bookId: b1, bookTitle: 'The Lead Generation Playbook', projectName: 'Spanish Latin America Edition', sourceLanguage: 'en', targetLanguage: 'es', targetVariant: 'es-419', targetTerritories: ['MX', 'CO', 'AR'], translationMethod: 'manual', reviewer1Id: R1, reviewer1Name: 'Reviewer One', reviewer2Id: R2, reviewer2Name: 'Reviewer Two', assignedReviewerIds: [R1, R2], status: 'in_review', qualityThreshold: 90, createdAt: t(25), updatedAt: t(3) },
+      [p2]: { organizationId: ORG_ID, bookId: b1, bookTitle: 'The Lead Generation Playbook', projectName: 'Brazilian Portuguese Edition', sourceLanguage: 'en', targetLanguage: 'pt', targetVariant: 'pt-BR', targetTerritories: ['BR'], translationMethod: 'manual', reviewer1Id: '', reviewer1Name: '', reviewer2Id: '', reviewer2Name: '', assignedReviewerIds: [], status: 'planning', qualityThreshold: 90, createdAt: t(5), updatedAt: t(5) }
+    }
+  };
+  const ch = (id, n, title, words, st, r1, r2, fin) => ({ chapterNumber: n, chapterTitle: title, sourceText: '', sourceWordCount: words, sourceFilePath: '', translationFilePath: '', sortOrder: n, status: st, reviewer1Status: r1, reviewer2Status: r2, finalApprovalStatus: fin, createdAt: t(24 - n), updatedAt: t(4 - n) });
+  cols['translationProjects/' + p1 + '/chapters'] = {
+    [c1]: ch(c1, 1, 'Introduction', 1200, 'in_review', 'approved', 'in_progress', 'pending'),
+    [c2]: ch(c2, 2, 'Finding Your Audience', 1850, 'in_review', 'in_progress', 'pending', 'pending'),
+    [c3]: ch(c3, 3, 'Building the Funnel', 1950, 'translated', 'pending', 'pending', 'pending')
+  };
+  const g = (s, tt, ctx, notes, st) => ({ bookId: b1, projectId: p1, sourceTerm: s, targetTerm: tt, context: ctx, usageNotes: notes, approvalStatus: st, approvedBy: st === 'approved' ? A : '', createdAt: t(20), updatedAt: t(20) });
+  cols['translationProjects/' + p1 + '/glossary'] = {
+    [uuid()]: g('Lead Generation', 'Generación de prospectos', 'Business marketing', 'Use consistently throughout the manuscript.', 'approved'),
+    [uuid()]: g('Sales funnel', 'Embudo de ventas', 'Business marketing', '', 'approved'),
+    [uuid()]: g('Call to action', 'Llamado a la acción', 'Marketing copy', 'Avoid "llamada a la acción" (Spain).', 'proposed')
+  };
+  cols['translationProjects/' + p1 + '/reviewIssues'] = {
+    [uuid()]: { bookId: b1, projectId: p1, chapterId: c1, chapterTitle: 'Introduction', reviewerId: R1, reviewerName: 'Reviewer One', reviewerRole: 'reviewer1', issueType: 'terminology', severity: 'major', originalText: 'Lead generation is the lifeblood of every business.', currentTranslation: 'La generación de clientes es la sangre de cada negocio.', suggestedCorrection: 'La generación de prospectos es el motor de todo negocio.', notes: 'Use the approved glossary term; "sangre" reads unnaturally in es-419.', status: 'open', createdAt: t(3), updatedAt: t(3), resolvedAt: null }
+  };
+  cols.activityLogs = {
+    [uuid()]: { userId: A, userName: 'CJ (Administrator)', action: 'project_created', bookId: b1, projectId: p1, description: 'Created project "Spanish Latin America Edition"', createdAt: t(25) },
+    [uuid()]: { userId: A, userName: 'CJ (Administrator)', action: 'reviewers_assigned', bookId: b1, projectId: p1, description: 'Assigned Reviewer One and Reviewer Two', createdAt: t(24) },
+    [uuid()]: { userId: R1, userName: 'Reviewer One', action: 'issue_created', bookId: b1, projectId: p1, chapterId: c1, description: 'Reported terminology issue in "Introduction"', createdAt: t(3) }
+  };
+  return {
+    org: { id: ORG_ID, name: 'BookTranslationLab', status: 'active', defaultLanguage: 'en', settings: { defaultTargetLanguage: 'es', defaultSpanishVariant: 'es-419' } },
+    cols
+  };
+}
+
+/* ==========================================================================
+   APP STATE, AUTH FLOW & ROUTING
+   ========================================================================== */
+let api = null;
+const S = { user: null, member: null, isAdmin: false, org: null, myProjects: [], route: {}, vd: null, sort: {}, filter: {}, sideOpen: false };
+const ADMIN_ONLY = ['books', 'book', 'authors', 'projects', 'members', 'activity', 'setup'];
+
+async function boot() {
+  applyTheme();
+  const wantDemo = !IS_CONFIGURED || sessionStorage.getItem('btl_force_demo') === '1';
+  try {
+    api = wantDemo ? createDemoApi() : await createFirebaseApi();
+  } catch (e) {
+    logError(e, 'firebase init');
+    $('#root').innerHTML = gateHtml('<h2 style="margin-top:20px">Could not start Firebase</h2><p class="gate-sub">' + esc(friendly(e)) + '</p><div class="btn-row" style="margin-top:16px"><button class="btn" data-act="reload">Retry</button><button class="btn" data-act="force-demo">Open demo mode</button></div>');
+    return;
+  }
+  api.onAuth(onAuthChange);
+}
+
+async function onAuthChange(user) {
+  S.user = user; S.member = null; S.isAdmin = false; S.myProjects = [];
+  if (!user) return showLogin();
+  $('#root').innerHTML = '<div class="loading">Checking your access…</div>';
+  try {
+    const m = await api.get('members', user.uid);
+    if (!m) return showGate('noaccess');
+    if (m.status !== 'active') return showGate('inactive');
+    S.member = m; S.isAdmin = m.role === 'admin';
+    S.org = await api.getOrg().catch(e => { logError(e, 'org read'); return null; });
+    if (!S.isAdmin) S.myProjects = await api.list('translationProjects', { where: ['assignedReviewerIds', 'array-contains', user.uid] });
+    showShell(); route();
+  } catch (e) {
+    logError(e, 'membership');
+    showGate('error', friendly(e));
+  }
+}
+
+function parseHash() {
+  const p = (location.hash.replace(/^#\/?/, '') || 'dashboard').split('/');
+  return { view: p[0] || 'dashboard', id: p[1] || '', tab: p[2] || '' };
+}
+const go = h => { location.hash = '#/' + h; };
+window.addEventListener('hashchange', () => { if (S.member) route(); else if (!S.user && parseHash().view === 'setup') showSetupPublic(); });
+
+async function route() {
+  if (!S.member) return;
+  S.route = parseHash();
+  const requested = location.hash;
+  let v = S.route.view;
+  if (!VIEWS[v] || (ADMIN_ONLY.includes(v) && !S.isAdmin)) { v = 'dashboard'; S.route = { view: v }; }
+  S.sideOpen = false; renderNav();
+  const main = $('#main');
+  main.innerHTML = '<div class="loading">Loading…</div>';
+  window.scrollTo(0, 0);
+  try {
+    S.vd = await VIEWS[v].load(S.route);
+    if (location.hash !== requested) return; // navigated away mid-load
+    rerender();
+  } catch (e) {
+    logError(e, 'load ' + v);
+    main.innerHTML = '<div class="card"><h2>Unable to open this page</h2><p class="muted">' + esc(friendly(e)) + '</p><a class="btn" href="#/dashboard">Back to dashboard</a></div>';
+  }
+}
+function rerender() { const v = VIEWS[S.route.view] ? S.route.view : 'dashboard'; $('#main').innerHTML = VIEWS[v].html(S.vd, S.route); }
+const refresh = () => route();
+
+/* ---------- logging ---------- */
+async function logActivity(action, description, ctx = {}) {
+  try {
+    await api.set('activityLogs', uuid(), {
+      userId: S.user.uid, userName: S.member.displayName || S.user.email || '', action, description,
+      bookId: ctx.bookId || '', projectId: ctx.projectId || '', chapterId: ctx.chapterId || '', createdAt: api.ts()
+    });
+  } catch (e) { logError(e, 'activity log'); }
+}
+
+/* ==========================================================================
+   SHELL, LOGIN, GATES
+   ========================================================================== */
+const ICONS = {
+  dashboard: '<path d="M3 13h8V3H3zm10 8h8V11h-8zM3 21h8v-6H3zm10-18v6h8V3z"/>',
+  books: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z M6.5 17A2.5 2.5 0 0 0 4 19.5 2.5 2.5 0 0 0 6.5 22H20v-5"/>',
+  authors: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>',
+  projects: '<path d="M5 8h14M5 12h14M5 16h9"/><rect x="2" y="3" width="20" height="18" rx="2"/>',
+  issues: '<circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16.5v.5"/>',
+  glossary: '<path d="M4 7V4h16v3M9 20h6M12 4v16"/>',
+  members: '<circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-3.5 3-5.5 7-5.5s7 2 7 5.5M16 4.5a3.5 3.5 0 0 1 0 7M18 14.8c2.4.6 4 2.4 4 5.2"/>',
+  activity: '<path d="M3 12h4l3 8 4-16 3 8h4"/>',
+  setup: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+  book: '<path d="M2 4h7a3 3 0 0 1 3 3v13a2 2 0 0 0-2-2H2zM22 4h-7a3 3 0 0 0-3 3v13a2 2 0 0 1 2-2h8z"/>'
+};
+const icon = n => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (ICONS[n] || '') + '</svg>';
+const brandHtml = () => '<div class="brand"><div class="brand-mark">B</div><div><div class="brand-name">BookTranslationLab</div><div class="brand-ver">v' + APP.version + (api && api.mode === 'demo' ? ' · demo' : '') + '</div></div></div>';
+const gateHtml = inner => '<div class="gate"><div class="gate-card">' + brandHtml() + inner + '</div></div>';
+
+function showLogin() {
+  if (parseHash().view === 'setup') return showSetupPublic();
+  if (api.mode === 'demo') {
+    const u = [['demo-admin', 'CJ (Administrator)', 'Admin'], ['demo-reviewer-1', 'Reviewer One', 'Reviewer'], ['demo-reviewer-2', 'Reviewer Two', 'Reviewer'], ['demo-inactive', 'Former Reviewer', 'Inactive'], ['demo-unregistered', 'Unregistered user', 'No membership']];
+    $('#root').innerHTML = gateHtml(
+      '<p class="gate-sub">' + (IS_CONFIGURED ? 'Demo mode (forced).' : 'Firebase is not configured yet, so the app is running in <b>demo mode</b> with sample data stored in this browser.') + ' Choose a user to sign in as:</p>' +
+      '<div class="demo-users">' + u.map(x => '<button class="btn" data-act="demo-login" data-uid="' + x[0] + '"><span>' + esc(x[1]) + '</span><small>' + x[2] + '</small></button>').join('') + '</div>' +
+      '<div class="btn-row" style="margin-top:18px;justify-content:space-between"><a href="#/setup" class="small">Setup guide &amp; security rules</a><span class="btn-row">' +
+      (IS_CONFIGURED ? '<button class="btn sm ghost" data-act="exit-demo">Use Firebase</button>' : '') +
+      '<button class="btn sm ghost" data-act="reset-demo">Reset demo data</button></span></div>');
+    return;
+  }
+  $('#root').innerHTML = gateHtml(
+    '<form id="login-form" autocomplete="on">' +
+    '<label class="f">Email<input type="email" name="email" required autocomplete="username"></label>' +
+    '<label class="f">Password<input type="password" name="password" required autocomplete="current-password"></label>' +
+    '<div id="login-err" class="form-err hidden"></div>' +
+    '<button class="btn primary" type="submit" style="justify-content:center">Sign in</button>' +
+    '</form><div class="btn-row" style="margin-top:14px;justify-content:space-between"><button class="btn ghost sm" data-act="reset-pw">Forgot password?</button><a href="#/setup" class="small">Setup guide</a></div>' +
+    '<p class="gate-sub small">Accounts are provisioned by the administrator. There is no public sign-up.</p>');
+  $('#login-form').addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const f = new FormData(ev.target), btn = ev.target.querySelector('button[type=submit]'), err = $('#login-err');
+    btn.disabled = true; err.classList.add('hidden');
+    try { await api.signIn(String(f.get('email')).trim(), String(f.get('password'))); }
+    catch (e) { logError(e, 'sign in'); err.textContent = friendly(e); err.classList.remove('hidden'); btn.disabled = false; }
+  });
+}
+
+function showGate(kind, detail) {
+  const u = S.user || {};
+  const body = {
+    noaccess: '<h2 style="margin-top:22px">Access pending</h2><p class="gate-sub">You are signed in as <b>' + esc(u.email) + '</b>, but this account has not been added to the organization yet. Send your user ID to the administrator:</p><pre class="code" style="margin-top:10px">' + esc(u.uid) + '</pre><div class="btn-row" style="margin-top:12px"><button class="btn sm" data-act="copy" data-text="' + esc(u.uid) + '">Copy user ID</button></div>',
+    inactive: '<h2 style="margin-top:22px">Account inactive</h2><p class="gate-sub">Your membership has been deactivated. Contact the administrator if you need access restored.</p>',
+    error: '<h2 style="margin-top:22px">Could not verify access</h2><p class="gate-sub">' + esc(detail || '') + '</p><p class="gate-sub small">If this is a new project, confirm the Firestore rules are published and ORG_ID matches your organization document.</p>'
+  }[kind];
+  $('#root').innerHTML = gateHtml(body + '<div class="btn-row" style="margin-top:20px"><button class="btn" data-act="signout">Sign out</button><button class="btn ghost" data-act="reload">Retry</button></div>');
+}
+
+function showShell() {
+  const demo = api.mode === 'demo';
+  const unverified = !demo && S.user && !S.user.emailVerified;
+  $('#root').innerHTML =
+    '<div class="shell"><aside class="side" id="side"></aside><div class="main-wrap">' +
+    '<div class="topbar"><button class="btn sm" data-act="side" aria-label="Open menu">☰</button>' + brandHtml() + '</div>' +
+    (demo ? '<div class="banner demo"><b>Demo mode</b> — sample data in this browser; permission checks are simulated. <a href="#/setup">Connect Firebase</a></div>' : '') +
+    (unverified ? '<div class="banner warn">Your email address is not verified. <button class="btn sm" data-act="verify">Send verification email</button></div>' : '') +
+    '<main id="main"></main></div><div id="scrim"></div></div>';
+  renderNav();
+}
+
+function renderNav() {
+  const side = $('#side'); if (!side) return;
+  const v = S.route.view || parseHash().view;
+  const a = (href, name, ic, on, n) => '<a href="#/' + href + '" class="' + (on ? 'on' : '') + '">' + icon(ic) + '<span>' + esc(name) + '</span>' + (n != null ? '<span class="n">' + n + '</span>' : '') + '</a>';
+  let nav = '';
+  if (S.isAdmin) {
+    nav = '<div class="nav-h">Workspace</div>' +
+      a('dashboard', 'Dashboard', 'dashboard', v === 'dashboard') +
+      a('books', 'Books', 'books', v === 'books' || v === 'book') +
+      a('authors', 'Authors', 'authors', v === 'authors') +
+      a('projects', 'Translation projects', 'projects', v === 'projects' || v === 'project') +
+      a('issues', 'Review issues', 'issues', v === 'issues') +
+      a('glossary', 'Glossary', 'glossary', v === 'glossary') +
+      '<div class="nav-h">Administration</div>' +
+      a('members', 'User management', 'members', v === 'members') +
+      a('activity', 'Activity log', 'activity', v === 'activity') +
+      a('setup', 'Setup & rules', 'setup', v === 'setup');
+  } else {
+    nav = '<div class="nav-h">Review</div>' +
+      a('dashboard', 'My dashboard', 'dashboard', v === 'dashboard') +
+      a('issues', 'My corrections', 'issues', v === 'issues') +
+      a('glossary', 'Glossary', 'glossary', v === 'glossary') +
+      '<div class="nav-h">Assigned projects</div>' +
+      (S.myProjects.length ? S.myProjects.map(p => a('project/' + p.id, p.projectName, 'book', v === 'project' && S.route.id === p.id)).join('') : '<div class="small muted" style="padding:4px 10px">No projects assigned yet.</div>');
+  }
+  side.className = 'side' + (S.sideOpen ? ' open' : '');
+  side.innerHTML = brandHtml() + '<nav class="nav">' + nav + '</nav>' +
+    '<div class="side-foot"><div class="who"><b>' + esc(S.member.displayName || S.user.email) + '</b><span>' + esc(S.user.email || '') + '</span><span>' + (S.isAdmin ? 'Administrator' : 'Reviewer') + (S.org ? ' · ' + esc(S.org.name) : '') + '</span></div>' +
+    '<div class="btn-row"><button class="btn sm" data-act="signout">Sign out</button><button class="btn sm ghost" data-act="theme" title="Toggle light/dark theme">Theme</button><button class="btn sm ghost" data-act="changelog">v' + APP.version + '</button></div></div>';
+  const scrim = $('#scrim'); if (scrim) scrim.className = S.sideOpen ? 'scrim' : '';
+}
+
+function applyTheme() { const t = ls.get('btl_theme', ''); if (t) document.documentElement.setAttribute('data-theme', t); else document.documentElement.removeAttribute('data-theme'); }
+
+/* ==========================================================================
+   UI BUILDERS — tables, forms, modals
+   ========================================================================== */
+function table(id, cols, rows, empty) {
+  const st = S.sort[id] || {};
+  let r = rows.slice();
+  if (st.key) {
+    const c = cols.find(x => x.key === st.key);
+    if (c) { const get = c.sort || (x => x[c.key]); r.sort((a, b) => cmp(get(a), get(b)) * st.dir); }
+  }
+  const head = cols.map(c => {
+    if (c.nosort) return '<th>' + esc(c.label) + '</th>';
+    const on = st.key === c.key, ar = on ? (st.dir > 0 ? '▲' : '▼') : '↕';
+    return '<th><button class="th-sort' + (on ? ' on' : '') + '" data-act="sort" data-table="' + id + '" data-key="' + c.key + '">' + esc(c.label) + ' <span class="ar">' + ar + '</span></button></th>';
+  }).join('');
+  if (!r.length) return '<div class="tbl-wrap"><div class="empty">' + (empty || 'Nothing here yet.') + '</div></div>';
+  const body = r.map(x => '<tr>' + cols.map(c => '<td data-label="' + esc(c.label) + '"' + (c.cls ? ' class="' + c.cls + '"' : '') + '><div class="cv">' + (c.render ? c.render(x) : esc(x[c.key] ?? '')) + '</div></td>').join('') + '</tr>').join('');
+  return '<div class="tbl-wrap cards"><table><thead><tr>' + head + '</tr></thead><tbody>' + body + '</tbody></table></div>';
+}
+
+function fieldHtml(f) {
+  const v = f.value ?? '';
+  const req = f.required ? ' required' : '';
+  const dis = f.disabled ? ' disabled' : '';
+  let input;
+  if (f.type === 'select') {
+    input = '<select name="' + f.name + '"' + req + dis + '>' + opts(f.options).map(o => '<option value="' + esc(o[0]) + '"' + (String(o[0]) === String(v) ? ' selected' : '') + (o[2] ? ' disabled' : '') + '>' + esc(o[1]) + '</option>').join('') + '</select>';
+  } else if (f.type === 'textarea') {
+    input = '<textarea name="' + f.name + '"' + req + dis + (f.rows ? ' rows="' + f.rows + '"' : '') + '>' + esc(v) + '</textarea>';
+  } else if (f.type === 'file') {
+    input = '<input type="file" name="' + f.name + '" accept=".docx,.pdf,.epub,.txt,.md"' + req + '>';
+  } else {
+    input = '<input type="' + (f.type || 'text') + '" name="' + f.name + '" value="' + esc(v) + '"' + req + dis + (f.min != null ? ' min="' + f.min + '"' : '') + (f.max != null ? ' max="' + f.max + '"' : '') + (f.placeholder ? ' placeholder="' + esc(f.placeholder) + '"' : '') + '>';
+  }
+  return '<label class="f' + (f.full ? ' full' : '') + '">' + esc(f.label) + (f.required ? ' *' : '') + input + (f.help ? '<span class="help">' + esc(f.help) + '</span>' : '') + '</label>';
+}
+
+function modal(title, bodyHtml, footHtml, wide) {
+  closeModal();
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg'; bg.id = 'modal';
+  bg.innerHTML = '<div class="modal" role="dialog" aria-modal="true" style="' + (wide ? 'max-width:780px' : '') + '"><div class="modal-h"><h2>' + esc(title) + '</h2><button class="btn ghost sm" data-act="close-modal" aria-label="Close">✕</button></div>' + bodyHtml + (footHtml || '') + '</div>';
+  bg.addEventListener('mousedown', e => { if (e.target === bg) closeModal(); });
+  document.body.appendChild(bg);
+  return bg;
+}
+function closeModal() { const m = $('#modal'); if (m) m.remove(); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+function openForm({ title, fields, submitLabel = 'Save', onSubmit, intro, wide }) {
+  const body = '<form id="mform" novalidate><div class="modal-b">' + (intro ? '<div class="note" style="margin-bottom:14px">' + intro + '</div>' : '') +
+    '<div class="form-grid">' + fields.map(fieldHtml).join('') + '</div><div id="mform-err" class="form-err hidden"></div></div>' +
+    '<div class="modal-f"><button type="button" class="btn" data-act="close-modal">Cancel</button><button type="submit" class="btn primary">' + esc(submitLabel) + '</button></div></form>';
+  const m = modal(title, body, '', wide);
+  const form = $('#mform', m);
+  const first = form.querySelector('input:not([type=file]):not([disabled]),select:not([disabled]),textarea'); if (first) first.focus();
+  form.addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const err = $('#mform-err'), btn = form.querySelector('button[type=submit]');
+    err.classList.add('hidden');
+    const vals = {};
+    for (const f of fields) {
+      const el = form.elements[f.name]; if (!el) continue;
+      if (f.type === 'file') vals[f.name] = el.files[0] || null;
+      else if (f.type === 'number') vals[f.name] = el.value === '' ? null : Number(el.value);
+      else vals[f.name] = typeof el.value === 'string' ? el.value.trim() : el.value;
+      if (f.required && (vals[f.name] == null || vals[f.name] === '')) { err.textContent = f.label + ' is required.'; err.classList.remove('hidden'); el.focus(); return; }
+    }
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try { await onSubmit(vals); closeModal(); }
+    catch (e) { logError(e, 'form: ' + title); err.textContent = friendly(e); err.classList.remove('hidden'); btn.disabled = false; btn.textContent = submitLabel; }
+  });
+}
+
+function confirmBox(title, msg, okLabel = 'Delete') {
+  return new Promise(res => {
+    const m = modal(title, '<div class="modal-b"><p style="margin:0">' + msg + '</p></div>', '<div class="modal-f"><button class="btn" id="cf-no">Cancel</button><button class="btn primary" id="cf-yes">' + esc(okLabel) + '</button></div>');
+    $('#cf-no', m).onclick = () => { closeModal(); res(false); };
+    $('#cf-yes', m).onclick = () => { closeModal(); res(true); };
+  });
+}
+
+/* ---------- files ---------- */
+function validateFile(file) {
+  if (!file) throw new AppError('Choose a file to upload.');
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  if (!FILE_TYPES[ext]) throw new AppError('Unsupported file type ".' + ext + '". Allowed: DOCX, PDF, EPUB, TXT, MD.', 'unsupported');
+  if (file.size >= MAX_UPLOAD) throw new AppError('File is ' + fmtBytes(file.size) + '. The upload limit is 25 MB.', 'oversized');
+  if (file.size === 0) throw new AppError('The file is empty.');
+  return { ext, contentType: FILE_TYPES[ext] };
+}
+async function uploadWithProgress(path, file, contentType) {
+  const bar = document.createElement('div'); bar.className = 'upbar';
+  bar.innerHTML = '<div>Uploading <b>' + esc(file.name) + '</b> <span id="up-pct">0%</span></div><div class="progress"><i style="width:0%"></i></div>';
+  document.body.appendChild(bar);
+  try {
+    await api.upload(path, file, contentType, p => { const pct = Math.round(p * 100) + '%'; bar.querySelector('i').style.width = pct; const s = bar.querySelector('#up-pct'); if (s) s.textContent = pct; });
+  } finally { bar.remove(); }
+}
+async function downloadFile(path, name) {
+  try {
+    toast('Preparing download…');
+    const blob = await api.download(path);
+    const url = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = url; a.download = name || path.split('/').pop(); document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  } catch (e) { fail(e, 'download ' + path); }
+}
+
+/* ==========================================================================
+   DATA HELPERS
+   ========================================================================== */
+const P = pid => 'translationProjects/' + pid;
+async function loadProjectBundle(pid) {
+  const project = await api.get('translationProjects', pid);
+  if (!project) throw new AppError('This translation project does not exist.', 'not-found');
+  const [chapters, issues, glossary, versions, book] = await Promise.all([
+    api.list(P(pid) + '/chapters', { orderBy: ['sortOrder', 'asc'] }),
+    api.list(P(pid) + '/reviewIssues'),
+    api.list(P(pid) + '/glossary'),
+    api.list(P(pid) + '/versions'),
+    api.get('books', project.bookId).catch(() => null)
+  ]);
+  return { project, chapters, issues, glossary, versions, book };
+}
+async function visibleProjects() {
+  return S.isAdmin ? api.list('translationProjects') : api.list('translationProjects', { where: ['assignedReviewerIds', 'array-contains', S.user.uid] });
+}
+const myRole = p => !p ? null : p.reviewer1Id === S.user.uid ? 'reviewer1' : p.reviewer2Id === S.user.uid ? 'reviewer2' : null;
+const authorName = a => a ? ((a.firstName || '') + ' ' + (a.lastName || '')).trim() : '—';
+function completion(chs) { if (!chs.length) return 0; return Math.round(chs.filter(c => c.finalApprovalStatus === 'approved' || c.status === 'approved').length / chs.length * 100); }
+function reviewerCompletion(chs, role) { if (!chs.length) return 0; const k = role === 'reviewer2' ? 'reviewer2Status' : 'reviewer1Status'; return Math.round(chs.filter(c => c[k] === 'approved').length / chs.length * 100); }
+const progressBar = pct => '<div class="progress" title="' + pct + '%"><i style="width:' + pct + '%"></i></div>';
+
+/* ==========================================================================
+   VIEWS
+   ========================================================================== */
+const VIEWS = {};
+
+/* ---------- Dashboard ---------- */
+VIEWS.dashboard = {
+  async load() {
+    if (S.isAdmin) {
+      const [authors, books, projects, members, logs] = await Promise.all([
+        api.list('authors'), api.list('books'), api.list('translationProjects'), api.list('members'),
+        api.list('activityLogs', { orderBy: ['createdAt', 'desc'], limit: 8 }).catch(e => { logError(e, 'logs'); return []; })
+      ]);
+      const open = await Promise.all(projects.map(p => api.list(P(p.id) + '/reviewIssues', { where: ['status', '==', 'open'] }).catch(() => [])));
+      projects.forEach((p, i) => { p._open = open[i].length; });
+      return { authors, books, projects, members, logs, openTotal: open.reduce((s, x) => s + x.length, 0) };
+    }
+    const projects = await visibleProjects();
+    S.myProjects = projects;
+    const bundles = await Promise.all(projects.map(async p => {
+      const [chapters, issues, glossary] = await Promise.all([api.list(P(p.id) + '/chapters', { orderBy: ['sortOrder', 'asc'] }), api.list(P(p.id) + '/reviewIssues'), api.list(P(p.id) + '/glossary')]);
+      return { p, chapters, issues, glossary, role: myRole(p) };
+    }));
+    return { bundles };
+  },
+  html(d) {
+    return S.isAdmin ? adminDashboard(d) : reviewerDashboard(d);
+  }
+};
+function adminDashboard(d) {
+  const active = d.members.filter(m => m.status === 'active').length;
+  const stat = (k, v, s) => '<div class="stat"><div class="k">' + k + '</div><div class="v">' + v + '</div><div class="s">' + (s || '&nbsp;') + '</div></div>';
+  const bookMap = Object.fromEntries(d.books.map(b => [b.id, b]));
+  const unassigned = d.projects.filter(p => !(p.assignedReviewerIds || []).length).length;
+  const logs = d.logs.length ? '<ul class="check-list">' + d.logs.map(l => '<li><div><div>' + esc(l.description) + '</div><div class="small muted">' + esc(l.userName || '') + ' · ' + fmtDate(l.createdAt) + '</div></div><span class="exp">' + esc(label(l.action)) + '</span></li>').join('') + '</ul>' : '<div class="empty">No activity recorded yet.</div>';
+  return '<div class="page-head"><div><h1>Dashboard</h1><p>' + esc(S.org ? S.org.name : APP.name) + ' — publishing overview</p></div><div class="btn-row"><button class="btn" data-act="new-book">New book</button><button class="btn primary" data-act="new-project">New translation project</button></div></div>' +
+    '<div class="stats">' + stat('Books', d.books.length, d.books.filter(b => b.status === 'active').length + ' active') + stat('Authors', d.authors.length, d.authors.filter(a => a.status === 'contracted').length + ' contracted') +
+    stat('Projects', d.projects.length, unassigned ? unassigned + ' without reviewers' : 'all staffed') + stat('Open issues', d.openTotal, 'awaiting resolution') + stat('Members', active, (d.members.length - active) + ' inactive') + '</div>' +
+    '<div class="grid g2 g-dash"><div style="min-width:0"><div class="card-h"><h2>Translation projects</h2><a href="#/projects" class="small">View all</a></div>' +
+    table('dash-proj', [
+      { key: 'projectName', label: 'Project', render: p => '<a class="rowlink" href="#/project/' + p.id + '">' + esc(p.projectName) + '</a><div class="t-sub">' + esc((bookMap[p.bookId] || {}).title || p.bookTitle || '') + '</div>' },
+      { key: 'targetVariant', label: 'Target', render: p => '<span class="mono">' + esc(p.targetVariant) + '</span>' },
+      { key: 'status', label: 'Status', render: p => chip(p.status) },
+      { key: '_open', label: 'Open issues', render: p => String(p._open || 0) }
+    ], d.projects, 'No translation projects yet. Create a book, then add a language project.') +
+    '</div><div class="card"><div class="card-h"><h2>Recent activity</h2><a href="#/activity" class="small">Full log</a></div>' + logs + '</div></div>';
+}
+function reviewerDashboard(d) {
+  const b = d.bundles;
+  if (!b.length) return '<div class="page-head"><div><h1>Welcome, ' + esc(S.member.displayName || '') + '</h1><p>Your review assignments will appear here.</p></div></div><div class="card"><div class="empty">No translation projects are assigned to you yet. The administrator will notify you when a manuscript is ready.</div></div>';
+  const awaiting = [], mine = [];
+  b.forEach(x => {
+    const k = x.role === 'reviewer2' ? 'reviewer2Status' : 'reviewer1Status';
+    x.chapters.forEach(c => { if (c[k] !== 'approved') awaiting.push({ ...c, _p: x.p, _k: k }); });
+    x.issues.filter(i => i.reviewerId === S.user.uid).forEach(i => mine.push({ ...i, _p: x.p }));
+  });
+  const cards = b.map(x => {
+    const pct = reviewerCompletion(x.chapters, x.role);
+    return '<div class="card proj-card"><div class="btn-row" style="justify-content:space-between"><span class="chip accent">' + (x.role === 'reviewer1' ? 'Reviewer 1 · Translation accuracy' : 'Reviewer 2 · Editorial review') + '</span>' + chip(x.p.status) + '</div>' +
+      '<h3><a href="#/project/' + x.p.id + '">' + esc(x.p.projectName) + '</a></h3><div class="small muted">' + esc(x.p.bookTitle || '') + ' · <span class="mono">' + esc(x.p.sourceLanguage) + ' → ' + esc(x.p.targetVariant) + '</span></div>' +
+      '<div><div class="btn-row small" style="justify-content:space-between"><span>Your review completion</span><b>' + pct + '%</b></div>' + progressBar(pct) + '</div>' +
+      '<div class="small muted">' + x.chapters.length + ' chapters · ' + x.glossary.length + ' glossary terms · ' + x.issues.filter(i => i.reviewerId === S.user.uid).length + ' of your corrections</div>' +
+      '<div class="btn-row"><a class="btn sm primary" href="#/project/' + x.p.id + '/chapters">Open chapters</a><a class="btn sm" href="#/project/' + x.p.id + '/glossary">Glossary</a></div></div>';
+  }).join('');
+  return '<div class="page-head"><div><h1>Welcome, ' + esc(S.member.displayName || '') + '</h1><p>' + b.length + ' assigned project' + (b.length === 1 ? '' : 's') + ' · ' + awaiting.length + ' chapters awaiting your review</p></div></div>' +
+    '<div class="grid g2" style="margin-bottom:24px">' + cards + '</div>' +
+    '<div class="card-h"><h2>Chapters awaiting your review</h2></div>' +
+    table('rev-await', [
+      { key: 'chapterNumber', label: '#', sort: c => c.chapterNumber },
+      { key: 'chapterTitle', label: 'Chapter', render: c => '<a class="rowlink" href="#/project/' + c._p.id + '/chapters">' + esc(c.chapterTitle) + '</a><div class="t-sub">' + esc(c._p.projectName) + '</div>' },
+      { key: 'sourceWordCount', label: 'Words', render: c => num(c.sourceWordCount) },
+      { key: 'status', label: 'Chapter status', render: c => chip(c.status) },
+      { key: '_mine', label: 'Your status', sort: c => c[c._k], render: c => chip(c[c._k] || 'pending') },
+      { key: 'x', label: '', nosort: true, cls: 'act', render: c => '<button class="btn sm" data-act="rev-status" data-pid="' + c._p.id + '" data-id="' + c.id + '">Update status</button>' }
+    ], awaiting, 'All assigned chapters are approved. Nice work.') +
+    '<div class="card-h" style="margin-top:26px"><h2>Your submitted corrections</h2><a href="#/issues" class="small">View all</a></div>' +
+    issueTable('rev-mine', mine.slice(0, 10), true);
+}
+
+/* ---------- Books ---------- */
+VIEWS.books = {
+  async load() { const [books, authors, projects] = await Promise.all([api.list('books'), api.list('authors'), api.list('translationProjects')]); return { books, authors, projects }; },
+  html(d) {
+    return '<div class="page-head"><div><h1>Books</h1><p>Original source manuscripts and their rights status.</p></div><button class="btn primary" data-act="new-book">New book</button></div>' +
+      '<div class="toolbar"><input type="search" placeholder="Search title, author, genre…" data-search="books" value="' + esc(S.filter.books || '') + '"><select data-filter="booksStatus"><option value="">All statuses</option>' + opts(BOOK_STATUS).map(o => '<option value="' + o[0] + '"' + (S.filter.booksStatus === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></div>' +
+      '<div id="tblwrap">' + this.tbl(d) + '</div>';
+  },
+  tbl(d) {
+    const am = Object.fromEntries(d.authors.map(a => [a.id, a]));
+    const q = (S.filter.books || '').toLowerCase(), st = S.filter.booksStatus || '';
+    const rows = d.books.map(b => ({ ...b, _author: authorName(am[b.authorId]), _proj: d.projects.filter(p => p.bookId === b.id).length }))
+      .filter(b => (!st || b.status === st) && (!q || [b.title, b.subtitle, b._author, b.genre].join(' ').toLowerCase().includes(q)));
+    return table('books', [
+      { key: 'title', label: 'Title', render: b => '<a class="rowlink" href="#/book/' + b.id + '">' + esc(b.title) + '</a>' + (b.subtitle ? '<div class="t-sub">' + esc(b.subtitle) + '</div>' : '') },
+      { key: '_author', label: 'Author' },
+      { key: 'genre', label: 'Genre', render: b => esc(label(b.genre)) },
+      { key: 'wordCount', label: 'Words', render: b => num(b.wordCount) },
+      { key: 'rightsStatus', label: 'Rights', render: b => chip(b.rightsStatus) },
+      { key: '_proj', label: 'Projects', render: b => String(b._proj) },
+      { key: 'status', label: 'Status', render: b => chip(b.status) },
+      { key: 'createdAt', label: 'Created', render: b => fmtDate(b.createdAt, false) }
+    ], rows, d.books.length ? 'No books match your search.' : 'No books yet. Add an author, then create your first book.');
+  }
+};
+
+VIEWS.book = {
+  async load(r) {
+    const book = await api.get('books', r.id);
+    if (!book) throw new AppError('This book does not exist.', 'not-found');
+    const [author, projects] = await Promise.all([book.authorId ? api.get('authors', book.authorId) : null, api.list('translationProjects', { where: ['bookId', '==', r.id] })]);
+    return { book, author, projects };
+  },
+  html(d) {
+    const b = d.book, a = d.author;
+    const src = b.sourceFilePath
+      ? '<div class="btn-row"><span class="mono small">' + esc(b.sourceFilePath.split('/').pop()) + '</span><button class="btn sm" data-act="dl" data-path="' + esc(b.sourceFilePath) + '">Download</button><button class="btn sm" data-act="book-upload" data-id="' + b.id + '">Replace</button></div>'
+      : '<div class="btn-row"><span class="muted small">No manuscript uploaded.</span><button class="btn sm primary" data-act="book-upload" data-id="' + b.id + '">Upload manuscript</button></div>';
+    return '<div class="crumbs"><a href="#/books">Books</a> / ' + esc(b.title) + '</div>' +
+      '<div class="page-head"><div><h1>' + esc(b.title) + '</h1>' + (b.subtitle ? '<p>' + esc(b.subtitle) + '</p>' : '') + '</div><div class="btn-row"><button class="btn" data-act="edit-book" data-id="' + b.id + '">Edit</button><button class="btn danger" data-act="del-book" data-id="' + b.id + '">Delete</button></div></div>' +
+      '<div class="grid g2"><div class="card"><div class="card-h"><h2>Book details</h2>' + chip(b.status) + '</div><dl class="meta">' +
+      '<dt>Genre</dt><dd>' + esc(label(b.genre)) + '</dd><dt>Source language</dt><dd class="mono">' + esc(b.sourceLanguage) + '</dd>' +
+      '<dt>Source format</dt><dd>' + esc((b.sourceFormat || '—').toUpperCase()) + '</dd><dt>Word count</dt><dd>' + num(b.wordCount) + '</dd>' +
+      '<dt>Copyright owner</dt><dd>' + esc(b.copyrightOwner || '—') + '</dd><dt>Rights status</dt><dd>' + chip(b.rightsStatus) + '</dd>' +
+      '<dt>Created</dt><dd>' + fmtDate(b.createdAt) + '</dd><dt>Updated</dt><dd>' + fmtDate(b.updatedAt) + '</dd><dt>Record ID</dt><dd class="mono">' + esc(b.id) + '</dd></dl>' +
+      '<div class="diff-lbl" style="margin-top:18px">Original manuscript</div>' + src + '<p class="small muted" style="margin-bottom:0">Master manuscripts are visible to administrators only. Text extraction and chapter splitting arrive in a later release.</p></div>' +
+      '<div class="card"><div class="card-h"><h2>Author</h2>' + (a ? chip(a.status) : '') + '</div>' + (a ? '<dl class="meta"><dt>Name</dt><dd><b>' + esc(authorName(a)) + '</b></dd><dt>Email</dt><dd>' + (a.email ? '<a href="mailto:' + esc(a.email) + '">' + esc(a.email) + '</a>' : '—') + '</dd><dt>Website</dt><dd>' + (a.website ? '<a href="' + esc(a.website) + '" target="_blank" rel="noopener">' + esc(a.website) + '</a>' : '—') + '</dd><dt>Country</dt><dd>' + esc(a.country || '—') + '</dd><dt>Biography</dt><dd>' + esc(a.biography || '—') + '</dd></dl>' : '<div class="empty">No author linked.</div>') + '</div></div>' +
+      '<div class="card-h" style="margin-top:26px"><h2>Translation projects</h2><button class="btn primary" data-act="new-project" data-book="' + b.id + '">New translation project</button></div>' +
+      projectTable('book-proj', d.projects, null, 'No language editions yet for this book.');
+  }
+};
+
+/* ---------- Authors ---------- */
+VIEWS.authors = {
+  async load() { const [authors, books] = await Promise.all([api.list('authors'), api.list('books')]); return { authors, books }; },
+  html(d) {
+    return '<div class="page-head"><div><h1>Authors</h1><p>Author directory and relationship status.</p></div><button class="btn primary" data-act="new-author">New author</button></div>' +
+      '<div class="toolbar"><input type="search" placeholder="Search name, email, country…" data-search="authors" value="' + esc(S.filter.authors || '') + '"></div><div id="tblwrap">' + this.tbl(d) + '</div>';
+  },
+  tbl(d) {
+    const q = (S.filter.authors || '').toLowerCase();
+    const rows = d.authors.map(a => ({ ...a, _name: authorName(a), _books: d.books.filter(b => b.authorId === a.id).length }))
+      .filter(a => !q || [a._name, a.email, a.country].join(' ').toLowerCase().includes(q));
+    return table('authors', [
+      { key: 'lastName', label: 'Name', sort: a => a.lastName + ' ' + a.firstName, render: a => '<span class="t-title">' + esc(a._name) + '</span>' },
+      { key: 'email', label: 'Email', render: a => a.email ? '<a href="mailto:' + esc(a.email) + '">' + esc(a.email) + '</a>' : '—' },
+      { key: 'country', label: 'Country' },
+      { key: 'status', label: 'Status', render: a => chip(a.status) },
+      { key: '_books', label: 'Books', render: a => String(a._books) },
+      { key: 'createdAt', label: 'Added', render: a => fmtDate(a.createdAt, false) },
+      { key: 'x', label: '', nosort: true, cls: 'act', render: a => '<button class="btn sm" data-act="edit-author" data-id="' + a.id + '">Edit</button> <button class="btn sm danger" data-act="del-author" data-id="' + a.id + '">Delete</button>' }
+    ], rows, d.authors.length ? 'No authors match your search.' : 'No authors yet.');
+  }
+};
+
+/* ---------- Projects ---------- */
+function projectTable(id, projects, bookMap, empty) {
+  return table(id, [
+    { key: 'projectName', label: 'Project', render: p => '<a class="rowlink" href="#/project/' + p.id + '">' + esc(p.projectName) + '</a>' + (bookMap ? '<div class="t-sub">' + esc((bookMap[p.bookId] || {}).title || p.bookTitle || '') + '</div>' : '') },
+    { key: 'targetVariant', label: 'Target', render: p => '<span class="mono">' + esc(p.sourceLanguage) + ' → ' + esc(p.targetVariant) + '</span>' },
+    { key: 'translationMethod', label: 'Method', render: p => esc(label(p.translationMethod)) },
+    { key: 'reviewer1Name', label: 'Reviewer 1', render: p => p.reviewer1Name ? esc(p.reviewer1Name) : '<span class="chip warn">Unassigned</span>' },
+    { key: 'reviewer2Name', label: 'Reviewer 2', render: p => p.reviewer2Name ? esc(p.reviewer2Name) : '<span class="chip warn">Unassigned</span>' },
+    { key: 'status', label: 'Status', render: p => chip(p.status) },
+    { key: 'createdAt', label: 'Created', render: p => fmtDate(p.createdAt, false) }
+  ], projects, empty);
+}
+VIEWS.projects = {
+  async load() { const [projects, books] = await Promise.all([api.list('translationProjects'), api.list('books')]); return { projects, books }; },
+  html(d) {
+    const bm = Object.fromEntries(d.books.map(b => [b.id, b]));
+    const st = S.filter.projStatus || '', bk = S.filter.projBook || '';
+    const rows = d.projects.filter(p => (!st || p.status === st) && (!bk || p.bookId === bk));
+    return '<div class="page-head"><div><h1>Translation projects</h1><p>Each project is one language edition of a book, with its own chapters, reviewers and glossary.</p></div><button class="btn primary" data-act="new-project">New translation project</button></div>' +
+      '<div class="toolbar"><select data-filter="projBook"><option value="">All books</option>' + d.books.map(b => '<option value="' + b.id + '"' + (bk === b.id ? ' selected' : '') + '>' + esc(b.title) + '</option>').join('') + '</select>' +
+      '<select data-filter="projStatus"><option value="">All statuses</option>' + opts(PROJECT_STATUS).map(o => '<option value="' + o[0] + '"' + (st === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></div>' +
+      projectTable('projects', rows, bm, d.projects.length ? 'No projects match these filters.' : 'No translation projects yet.');
+  }
+};
+
+VIEWS.project = {
+  async load(r) { return loadProjectBundle(r.id); },
+  html(d, r) {
+    const p = d.project, tab = r.tab || (S.isAdmin ? 'overview' : 'chapters');
+    const role = myRole(p);
+    const openIssues = d.issues.filter(i => i.status === 'open').length;
+    const visibleVersions = d.versions.filter(v => S.isAdmin || v.folder !== 'exports');
+    const tabs = [['overview', 'Overview'], ['chapters', 'Chapters', d.chapters.length], ['issues', 'Review issues', openIssues], ['glossary', 'Glossary', d.glossary.length], ['files', 'Files & versions', visibleVersions.length]];
+    const head = '<div class="crumbs">' + (S.isAdmin ? '<a href="#/projects">Translation projects</a> / ' + (d.book ? '<a href="#/book/' + d.book.id + '">' + esc(d.book.title) + '</a> / ' : '') : '<a href="#/dashboard">My dashboard</a> / ') + esc(p.projectName) + '</div>' +
+      '<div class="page-head"><div><h1>' + esc(p.projectName) + '</h1><p>' + esc((d.book && d.book.title) || p.bookTitle || '') + ' · <span class="mono">' + esc(p.sourceLanguage) + ' → ' + esc(p.targetVariant) + '</span> · ' + chip(p.status) + (role ? ' <span class="chip accent">You: ' + (role === 'reviewer1' ? 'Reviewer 1' : 'Reviewer 2') + '</span>' : '') + '</p></div>' +
+      (S.isAdmin ? '<div class="btn-row"><button class="btn" data-act="assign" data-id="' + p.id + '">Assign reviewers</button><button class="btn" data-act="edit-project" data-id="' + p.id + '">Edit</button><button class="btn danger" data-act="del-project" data-id="' + p.id + '">Delete</button></div>' : '') + '</div>' +
+      '<nav class="tabs">' + tabs.map(t => '<a href="#/project/' + p.id + '/' + t[0] + '" class="' + (tab === t[0] ? 'on' : '') + '">' + t[1] + (t[2] != null ? '<span class="n">' + t[2] + '</span>' : '') + '</a>').join('') + '</nav>';
+    const body = { overview: projOverview, chapters: projChapters, issues: projIssues, glossary: projGlossary, files: projFiles }[tab] || projOverview;
+    return head + body(d);
+  }
+};
+function projOverview(d) {
+  const p = d.project, chs = d.chapters;
+  const pct = completion(chs), r1 = reviewerCompletion(chs, 'reviewer1'), r2 = reviewerCompletion(chs, 'reviewer2');
+  const words = chs.reduce((s, c) => s + (Number(c.sourceWordCount) || 0), 0);
+  const byStatus = CHAPTER_STATUS.map(s => [s, chs.filter(c => c.status === s).length]).filter(x => x[1]);
+  const rv = (n, name, id) => '<div class="btn-row" style="justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)"><div><div class="small muted">' + n + '</div><b>' + (name ? esc(name) : '<span class="chip warn">Unassigned</span>') + '</b></div><span class="mono small muted">' + esc(id || '') + '</span></div>';
+  return '<div class="stats"><div class="stat"><div class="k">Chapters</div><div class="v">' + chs.length + '</div><div class="s">' + num(words) + ' source words</div></div>' +
+    '<div class="stat"><div class="k">Final approval</div><div class="v">' + pct + '%</div>' + progressBar(pct) + '</div>' +
+    '<div class="stat"><div class="k">Reviewer 1</div><div class="v">' + r1 + '%</div>' + progressBar(r1) + '</div>' +
+    '<div class="stat"><div class="k">Reviewer 2</div><div class="v">' + r2 + '%</div>' + progressBar(r2) + '</div>' +
+    '<div class="stat"><div class="k">Open issues</div><div class="v">' + d.issues.filter(i => i.status === 'open').length + '</div><div class="s">' + d.issues.length + ' total</div></div></div>' +
+    '<div class="grid g2"><div class="card"><div class="card-h"><h2>Project details</h2></div><dl class="meta">' +
+    '<dt>Book</dt><dd>' + (d.book ? (S.isAdmin ? '<a href="#/book/' + d.book.id + '">' + esc(d.book.title) + '</a>' : esc(d.book.title)) : esc(p.bookTitle || '—')) + '</dd>' +
+    '<dt>Target</dt><dd>' + esc(variantName(p.targetVariant)) + '</dd><dt>Territories</dt><dd>' + esc((p.targetTerritories || []).join(', ') || '—') + '</dd>' +
+    '<dt>Method</dt><dd>' + esc(label(p.translationMethod)) + '</dd><dt>Quality threshold</dt><dd>' + esc(p.qualityThreshold ?? '—') + '</dd>' +
+    '<dt>Status</dt><dd>' + chip(p.status) + '</dd><dt>Created</dt><dd>' + fmtDate(p.createdAt) + '</dd><dt>Updated</dt><dd>' + fmtDate(p.updatedAt) + '</dd><dt>Project ID</dt><dd class="mono">' + esc(p.id) + '</dd></dl></div>' +
+    '<div class="card"><div class="card-h"><h2>Review team</h2>' + (S.isAdmin ? '<button class="btn sm" data-act="assign" data-id="' + p.id + '">Change</button>' : '') + '</div>' +
+    rv('Reviewer 1 — Translation accuracy', p.reviewer1Name, p.reviewer1Id) + rv('Reviewer 2 — Spanish editorial review', p.reviewer2Name, p.reviewer2Id) +
+    '<div class="diff-lbl" style="margin-top:16px">Chapters by status</div>' + (byStatus.length ? '<div class="btn-row">' + byStatus.map(x => chip(x[0]) + ' <span class="small">' + x[1] + '</span>').join(' ') + '</div>' : '<div class="small muted">No chapters yet.</div>') + '</div></div>';
+}
+function projChapters(d) {
+  const p = d.project, role = myRole(p);
+  const fileBtn = (path, t) => path ? '<button class="btn sm ghost" data-act="dl" data-path="' + esc(path) + '" title="Download ' + t + '">⬇ ' + t + '</button>' : '';
+  const rows = d.chapters.map((c, i) => ({ ...c, _i: i, _n: d.chapters.length }));
+  const actions = c => {
+    if (S.isAdmin) return '<button class="btn sm ghost" data-act="ch-move" data-pid="' + p.id + '" data-id="' + c.id + '" data-dir="-1"' + (c._i === 0 ? ' disabled' : '') + ' title="Move up">↑</button><button class="btn sm ghost" data-act="ch-move" data-pid="' + p.id + '" data-id="' + c.id + '" data-dir="1"' + (c._i === c._n - 1 ? ' disabled' : '') + ' title="Move down">↓</button> <button class="btn sm" data-act="edit-chapter" data-pid="' + p.id + '" data-id="' + c.id + '">Edit</button> <button class="btn sm danger" data-act="del-chapter" data-pid="' + p.id + '" data-id="' + c.id + '">Delete</button>';
+    return '<button class="btn sm" data-act="rev-status" data-pid="' + p.id + '" data-id="' + c.id + '">My status</button> <button class="btn sm" data-act="new-issue" data-pid="' + p.id + '" data-ch="' + c.id + '">Report issue</button>';
+  };
+  return '<div class="toolbar" style="justify-content:space-between"><div class="small muted">' + d.chapters.length + ' chapters · ' + num(d.chapters.reduce((s, c) => s + (Number(c.sourceWordCount) || 0), 0)) + ' source words' + (role ? ' · You review as ' + (role === 'reviewer1' ? 'Reviewer 1 (translation accuracy)' : 'Reviewer 2 (editorial)') : '') + '</div>' +
+    (S.isAdmin ? '<div class="btn-row"><button class="btn" data-act="upload-file" data-pid="' + p.id + '">Upload chapter file</button><button class="btn primary" data-act="new-chapter" data-pid="' + p.id + '">Add chapter</button></div>' : '') + '</div>' +
+    table('chapters', [
+      { key: 'sortOrder', label: '#', render: c => '<span class="mono">' + esc(c.chapterNumber) + '</span>' },
+      { key: 'chapterTitle', label: 'Chapter', render: c => '<span class="t-title">' + esc(c.chapterTitle) + '</span><div>' + fileBtn(c.sourceFilePath, 'source') + fileBtn(c.translationFilePath, 'translation') + '</div>' },
+      { key: 'sourceWordCount', label: 'Words', render: c => num(c.sourceWordCount) },
+      { key: 'status', label: 'Status', render: c => chip(c.status) },
+      { key: 'reviewer1Status', label: 'Reviewer 1', render: c => chip(c.reviewer1Status || 'pending') },
+      { key: 'reviewer2Status', label: 'Reviewer 2', render: c => chip(c.reviewer2Status || 'pending') },
+      { key: 'finalApprovalStatus', label: 'Final', render: c => chip(c.finalApprovalStatus || 'pending') },
+      { key: 'x', label: '', nosort: true, cls: 'act', render: actions }
+    ], rows, S.isAdmin ? 'No chapters yet. Chapters are created manually in this release — click “Add chapter”.' : 'The administrator has not added chapters yet.');
+}
+function issueTable(id, issues, showProject) {
+  return table(id, [
+    { key: 'createdAt', label: 'Reported', render: i => fmtDate(i.createdAt, false) },
+    ...(showProject ? [{ key: '_proj', label: 'Project', sort: i => (i._p || {}).projectName, render: i => i._p ? '<a href="#/project/' + i._p.id + '/issues">' + esc(i._p.projectName) + '</a>' : '' }] : []),
+    { key: 'chapterTitle', label: 'Chapter' },
+    { key: 'issueType', label: 'Type', render: i => esc(label(i.issueType)) },
+    { key: 'severity', label: 'Severity', sort: i => SEVERITY.indexOf(i.severity), render: i => chip(i.severity) },
+    { key: 'reviewerName', label: 'Reviewer', render: i => esc(i.reviewerName || '') + (i.reviewerRole ? '<div class="t-sub">' + (i.reviewerRole === 'reviewer1' ? 'Reviewer 1' : i.reviewerRole === 'reviewer2' ? 'Reviewer 2' : 'Admin') + '</div>' : '') },
+    { key: 'status', label: 'Status', render: i => chip(i.status) },
+    { key: 'x', label: '', nosort: true, cls: 'act', render: i => '<button class="btn sm" data-act="view-issue" data-pid="' + (i.projectId || (i._p && i._p.id)) + '" data-id="' + i.id + '">Open</button>' }
+  ], issues, 'No review issues.');
+}
+function projIssues(d) {
+  const p = d.project, st = S.filter.issueStatus ?? 'open';
+  const rows = d.issues.filter(i => !st || i.status === st);
+  return '<div class="toolbar" style="justify-content:space-between"><div class="btn-row"><select data-filter="issueStatus"><option value="">All statuses</option>' + opts(ISSUE_STATUS).map(o => '<option value="' + o[0] + '"' + (st === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select><span class="small muted">' + rows.length + ' shown</span></div>' +
+    (d.chapters.length ? '<button class="btn primary" data-act="new-issue" data-pid="' + p.id + '">Submit correction</button>' : '') + '</div>' +
+    issueTable('issues-' + p.id, rows, false);
+}
+function projGlossary(d) {
+  const p = d.project, q = (S.filter.gloss || '').toLowerCase();
+  const rows = d.glossary.filter(g => !q || [g.sourceTerm, g.targetTerm, g.context].join(' ').toLowerCase().includes(q));
+  return '<div class="toolbar" style="justify-content:space-between"><input type="search" placeholder="Search terms…" data-search="gloss" value="' + esc(S.filter.gloss || '') + '">' +
+    (S.isAdmin ? '<button class="btn primary" data-act="new-term" data-pid="' + p.id + '">Add term</button>' : '<span class="small muted">Read-only. Suggest new terms by submitting a terminology correction.</span>') + '</div><div id="tblwrap">' + glossTable(rows, false) + '</div>';
+}
+function glossTable(rows, showProject) {
+  return table('gloss', [
+    { key: 'sourceTerm', label: 'Source term', render: g => '<span class="t-title">' + esc(g.sourceTerm) + '</span>' },
+    { key: 'targetTerm', label: 'Target term', render: g => esc(g.targetTerm) },
+    ...(showProject ? [{ key: '_pname', label: 'Project', render: g => '<a href="#/project/' + g.projectId + '/glossary">' + esc(g._pname) + '</a>' }] : []),
+    { key: 'context', label: 'Context' },
+    { key: 'usageNotes', label: 'Usage notes', render: g => '<span class="small">' + esc(g.usageNotes || '') + '</span>' },
+    { key: 'approvalStatus', label: 'Status', render: g => chip(g.approvalStatus) },
+    ...(S.isAdmin ? [{ key: 'x', label: '', nosort: true, cls: 'act', render: g => '<button class="btn sm" data-act="edit-term" data-pid="' + g.projectId + '" data-id="' + g.id + '">Edit</button> <button class="btn sm danger" data-act="del-term" data-pid="' + g.projectId + '" data-id="' + g.id + '">Delete</button>' }] : [])
+  ], rows, 'No glossary terms yet.');
+}
+function projFiles(d) {
+  const p = d.project, chm = Object.fromEntries(d.chapters.map(c => [c.id, c]));
+  const rows = d.versions.filter(v => S.isAdmin || v.folder !== 'exports').map(v => ({ ...v, _ch: chm[v.chapterId] ? chm[v.chapterId].chapterNumber + '. ' + chm[v.chapterId].chapterTitle : '' }));
+  return '<div class="toolbar" style="justify-content:space-between"><div class="small muted">Files are stored privately in Firebase Storage and downloaded with your signed-in session — no public links.</div>' +
+    (S.isAdmin ? '<button class="btn primary" data-act="upload-file" data-pid="' + p.id + '">Upload file</button>' : '') + '</div>' +
+    table('files', [
+      { key: 'fileName', label: 'File', render: v => '<span class="mono">' + esc(v.fileName) + '</span><div class="t-sub">' + esc(v.originalName || '') + '</div>' },
+      { key: 'folder', label: 'Folder', render: v => esc(label(v.folder)) },
+      { key: '_ch', label: 'Chapter' },
+      { key: 'versionNumber', label: 'Version', render: v => '<span class="mono">v' + esc(v.versionNumber) + '</span>' },
+      { key: 'description', label: 'Description', render: v => '<span class="small">' + esc(v.description || '') + '</span>' },
+      { key: 'size', label: 'Size', render: v => fmtBytes(v.size) },
+      { key: 'createdAt', label: 'Uploaded', render: v => fmtDate(v.createdAt) + '<div class="t-sub">' + esc(v.createdByName || '') + '</div>' },
+      { key: 'x', label: '', nosort: true, cls: 'act', render: v => '<button class="btn sm" data-act="dl" data-path="' + esc(v.storagePath) + '">Download</button>' + (S.isAdmin ? ' <button class="btn sm danger" data-act="del-file" data-pid="' + p.id + '" data-id="' + v.id + '">Delete</button>' : '') }
+    ], rows, 'No files uploaded for this project yet.');
+}
+
+/* ---------- Issues (cross-project) ---------- */
+VIEWS.issues = {
+  async load() {
+    const projects = await visibleProjects();
+    const lists = await Promise.all(projects.map(p => api.list(P(p.id) + '/reviewIssues').then(r => r.map(i => ({ ...i, _p: p })))));
+    let issues = lists.flat();
+    if (!S.isAdmin) issues = issues.filter(i => i.reviewerId === S.user.uid);
+    return { projects, issues };
+  },
+  html(d) {
+    const st = S.filter.allIssueStatus ?? (S.isAdmin ? 'open' : ''), sv = S.filter.allIssueSev || '';
+    const rows = d.issues.filter(i => (!st || i.status === st) && (!sv || i.severity === sv));
+    return '<div class="page-head"><div><h1>' + (S.isAdmin ? 'Review issues' : 'My corrections') + '</h1><p>' + (S.isAdmin ? 'Corrections submitted by reviewers across all projects.' : 'Corrections you have submitted on your assigned projects.') + '</p></div></div>' +
+      '<div class="toolbar"><select data-filter="allIssueStatus"><option value="">All statuses</option>' + opts(ISSUE_STATUS).map(o => '<option value="' + o[0] + '"' + (st === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select>' +
+      '<select data-filter="allIssueSev"><option value="">All severities</option>' + opts(SEVERITY).map(o => '<option value="' + o[0] + '"' + (sv === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select><span class="small muted">' + rows.length + ' of ' + d.issues.length + '</span></div>' +
+      issueTable('all-issues', rows, true);
+  }
+};
+
+/* ---------- Glossary (cross-project) ---------- */
+VIEWS.glossary = {
+  async load() {
+    const projects = await visibleProjects();
+    const lists = await Promise.all(projects.map(p => api.list(P(p.id) + '/glossary').then(r => r.map(g => ({ ...g, projectId: g.projectId || p.id, _pname: p.projectName })))));
+    return { projects, terms: lists.flat() };
+  },
+  html(d) {
+    const q = (S.filter.gloss || '').toLowerCase(), pf = S.filter.glossProj || '';
+    const rows = d.terms.filter(g => (!pf || g.projectId === pf) && (!q || [g.sourceTerm, g.targetTerm, g.context].join(' ').toLowerCase().includes(q)));
+    return '<div class="page-head"><div><h1>Glossary</h1><p>Approved terminology for each language edition.</p></div>' +
+      (S.isAdmin && d.projects.length ? '<button class="btn primary" data-act="new-term">Add term</button>' : '') + '</div>' +
+      '<div class="toolbar"><input type="search" placeholder="Search terms…" data-search="gloss" value="' + esc(S.filter.gloss || '') + '"><select data-filter="glossProj"><option value="">All projects</option>' + d.projects.map(p => '<option value="' + p.id + '"' + (pf === p.id ? ' selected' : '') + '>' + esc(p.projectName) + '</option>').join('') + '</select></div>' +
+      '<div id="tblwrap">' + glossTable(rows, true) + '</div>';
+  },
+  tbl(d) {
+    const q = (S.filter.gloss || '').toLowerCase(), pf = S.filter.glossProj || '';
+    return glossTable(d.terms.filter(g => (!pf || g.projectId === pf) && (!q || [g.sourceTerm, g.targetTerm, g.context].join(' ').toLowerCase().includes(q))), true);
+  }
+};
+
+/* ---------- Members ---------- */
+VIEWS.members = {
+  async load() { const [members, projects] = await Promise.all([api.list('members'), api.list('translationProjects')]); return { members, projects }; },
+  html(d) {
+    const rows = d.members.map(m => ({ ...m, _proj: d.projects.filter(p => (p.assignedReviewerIds || []).includes(m.uid || m.id)).length }));
+    return '<div class="page-head"><div><h1>User management</h1><p>Members of ' + esc(S.org ? S.org.name : 'the organization') + '. Access is granted only through these membership records.</p></div><button class="btn primary" data-act="new-member">Add member</button></div>' +
+      '<div class="note" style="margin-bottom:16px"><b>Provisioning steps.</b> 1) Create the user in Firebase Console → Authentication → Add user (email + temporary password). 2) Copy their <b>User UID</b>. 3) Click “Add member” and paste the UID. 4) The user signs in and resets their password. A user who signs in without a membership sees an “Access pending” screen showing their UID.</div>' +
+      table('members', [
+        { key: 'displayName', label: 'Name', render: m => '<span class="t-title">' + esc(m.displayName || '') + '</span>' + (m.uid === S.user.uid ? ' <span class="chip info">You</span>' : '') + '<div class="t-sub">' + esc(m.email || '') + '</div>' },
+        { key: 'uid', label: 'User UID', render: m => '<span class="mono small">' + esc(m.uid || m.id) + '</span>' },
+        { key: 'role', label: 'Role', render: m => '<span class="chip ' + (m.role === 'admin' ? 'accent' : '') + '">' + (m.role === 'admin' ? 'Administrator' : 'Reviewer') + '</span>' },
+        { key: 'status', label: 'Status', render: m => chip(m.status) },
+        { key: '_proj', label: 'Assigned projects', render: m => String(m._proj) },
+        { key: 'createdAt', label: 'Added', render: m => fmtDate(m.createdAt, false) },
+        { key: 'x', label: '', nosort: true, cls: 'act', render: m => m.uid === S.user.uid ? '<span class="small muted">Current admin</span>' : '<button class="btn sm" data-act="edit-member" data-id="' + m.id + '">Edit</button> <button class="btn sm" data-act="toggle-member" data-id="' + m.id + '">' + (m.status === 'active' ? 'Deactivate' : 'Activate') + '</button> <button class="btn sm danger" data-act="del-member" data-id="' + m.id + '">Remove</button>' }
+      ], rows, 'No members.');
+  }
+};
+
+/* ---------- Activity ---------- */
+VIEWS.activity = {
+  async load() { return { logs: await api.list('activityLogs', { orderBy: ['createdAt', 'desc'], limit: 300 }) }; },
+  html(d) {
+    return '<div class="page-head"><div><h1>Activity log</h1><p>Most recent 300 actions. Records are append-only.</p></div></div>' +
+      '<div class="toolbar"><input type="search" placeholder="Search actions, users, descriptions…" data-search="activity" value="' + esc(S.filter.activity || '') + '"></div><div id="tblwrap">' + this.tbl(d) + '</div>';
+  },
+  tbl(d) {
+    const q = (S.filter.activity || '').toLowerCase();
+    return table('activity', [
+      { key: 'createdAt', label: 'When', render: l => fmtDate(l.createdAt) },
+      { key: 'userName', label: 'User' },
+      { key: 'action', label: 'Action', render: l => '<span class="mono small">' + esc(l.action) + '</span>' },
+      { key: 'description', label: 'Description' }
+    ], d.logs.filter(l => !q || [l.userName, l.action, l.description].join(' ').toLowerCase().includes(q)), 'No activity recorded yet.');
+  }
+};
+
+/* ---------- Setup & rules ---------- */
+VIEWS.setup = { async load() { return {}; }, html() { return setupHtml(true); } };
+function showSetupPublic() {
+  $('#root').innerHTML = '<div style="max-width:1080px;margin:0 auto;padding:24px 16px 60px"><div class="btn-row" style="justify-content:space-between;margin-bottom:20px">' + brandHtml() + '<a class="btn" href="#/">Back to sign in</a></div>' + setupHtml(false) + '</div>';
+  window.onhashchange = null;
+}
+function tplText(id) { const el = document.getElementById(id); return el ? el.textContent.trim() : ''; }
+function setupHtml(inApp) {
+  const tab = (inApp ? S.route.tab || S.route.id : parseHash().id) || 'checklist';
+  const done = ls.get('btl_setup_done', {}), tests = ls.get('btl_tests_done', {});
+  const base = inApp ? '#/setup/x/' : '#/setup/';
+  const tabs = [['checklist', 'Firebase checklist'], ['bootstrap', 'Bootstrap admin'], ['firestore', 'Firestore rules'], ['storage', 'Storage rules'], ['indexes', 'Indexes'], ['firebasejson', 'firebase.json'], ['cors', 'Storage CORS'], ['tests', 'Acceptance tests'], ['changelog', 'Changelog'], ['errors', 'Error log']];
+  const codeBlock = (id, name) => '<div class="card"><div class="card-h"><h2 class="mono" style="font-size:15px">' + name + '</h2><div class="btn-row"><button class="btn sm" data-act="copy-tpl" data-tpl="' + id + '">Copy</button><button class="btn sm" data-act="save-tpl" data-tpl="' + id + '" data-name="' + name + '">Download</button></div></div><pre class="code">' + esc(tplText(id)) + '</pre></div>';
+  const bootstrapOrg = JSON.stringify({ name: 'BookTranslationLab', status: 'active', defaultLanguage: 'en', createdAt: '<timestamp>', createdBy: '<YOUR_ADMIN_UID>', settings: { defaultTargetLanguage: 'es', defaultSpanishVariant: 'es-419' } }, null, 2);
+  const bootstrapMember = JSON.stringify({ uid: '<YOUR_ADMIN_UID>', email: 'you@example.com', displayName: 'Your Name', role: 'admin', status: 'active', createdAt: '<timestamp>' }, null, 2);
+  let body;
+  if (tab === 'checklist') {
+    const n = SETUP_STEPS.filter((s, i) => done[i]).length;
+    body = '<div class="card"><div class="card-h"><h2>Firebase setup — ' + n + '/' + SETUP_STEPS.length + '</h2><button class="btn sm ghost" data-act="reset-check" data-key="btl_setup_done">Reset checklist</button></div>' +
+      '<ul class="check-list">' + SETUP_STEPS.map((s, i) => '<li><input type="checkbox" data-check="btl_setup_done" data-i="' + i + '"' + (done[i] ? ' checked' : '') + ' id="sc' + i + '"><label for="sc' + i + '">' + esc(s) + '</label></li>').join('') + '</ul></div>' +
+      '<div class="card"><h2>Connect this file to Firebase</h2><ol class="small" style="padding-left:18px;line-height:1.8"><li>Create a dedicated Firebase project named <b>BookTranslationLab</b> (do not reuse another app’s project).</li><li>Enable Authentication → Email/Password. Leave public sign-up unused; you provision users.</li><li>Create Cloud Firestore and a Storage bucket. Check your plan — Storage may require Blaze; set a budget alert.</li><li>Register a Web app and paste its config into <code>FIREBASE_CONFIG</code> near the top of the script. Set <code>ORG_ID</code> (default <code>' + esc(ORG_ID) + '</code>).</li><li>Publish the Firestore and Storage rules from the tabs above. Storage rules read Firestore, so approve the cross-service permission prompt.</li><li>Follow “Bootstrap admin” to create your organization document and admin membership.</li><li>Apply the Storage CORS config so authenticated downloads work from your Netlify domain.</li><li>Test everything in the Emulator Suite first: set <code>USE_EMULATORS = true</code> and run <code>firebase emulators:start</code>.</li></ol>' +
+      '<p class="small muted" style="margin-bottom:0">Firebase web config values are not secrets — the security rules protect the data. Never put an OpenAI or other private API key in this HTML file.</p></div>';
+  } else if (tab === 'bootstrap') {
+    body = '<div class="card"><h2>Create the first administrator</h2><p class="small">The app never lets anyone create their own admin membership. Do this once in the Firebase Console:</p><ol class="small" style="padding-left:18px;line-height:1.8"><li>Authentication → Users → <b>Add user</b> with your email and a password. Copy the <b>User UID</b>.</li><li>Firestore → Start collection <code>organizations</code> → Document ID <code>' + esc(ORG_ID) + '</code> with the fields below (use type <i>timestamp</i> for createdAt).</li><li>Inside that document, start subcollection <code>members</code> → Document ID = <b>your UID</b> with the member fields below.</li><li>Open the app and sign in. You will land on the administrator dashboard.</li></ol></div>' +
+      '<div class="grid g2"><div class="card"><div class="card-h"><h3 class="mono">organizations/' + esc(ORG_ID) + '</h3><button class="btn sm" data-act="copy" data-text="' + esc(bootstrapOrg) + '">Copy</button></div><pre class="code">' + esc(bootstrapOrg) + '</pre></div>' +
+      '<div class="card"><div class="card-h"><h3 class="mono">…/members/&lt;YOUR_ADMIN_UID&gt;</h3><button class="btn sm" data-act="copy" data-text="' + esc(bootstrapMember) + '">Copy</button></div><pre class="code">' + esc(bootstrapMember) + '</pre></div></div>';
+  } else if (tab === 'firestore') body = codeBlock('tpl-firestore-rules', 'firestore.rules');
+  else if (tab === 'storage') body = codeBlock('tpl-storage-rules', 'storage.rules');
+  else if (tab === 'indexes') body = '<div class="note" style="margin-bottom:12px">The app’s current queries use only single-field indexes (created automatically). These composite indexes match the specification’s dashboard plan and can be deployed now or when Firebase prompts for them.</div>' + codeBlock('tpl-indexes', 'firestore.indexes.json');
+  else if (tab === 'firebasejson') body = codeBlock('tpl-firebase-json', 'firebase.json');
+  else if (tab === 'cors') body = codeBlock('tpl-cors', 'cors.json');
+  else if (tab === 'tests') {
+    const n = ACCEPTANCE_TESTS.filter((t, i) => tests[i]).length;
+    body = '<div class="card"><div class="card-h"><h2>Acceptance tests — ' + n + '/' + ACCEPTANCE_TESTS.length + ' passed</h2><button class="btn sm ghost" data-act="reset-check" data-key="btl_tests_done">Reset</button></div><p class="small muted">Run these against a fresh Firebase project (or the Emulator Suite) before moving to the next release. Results are saved in this browser.</p>' +
+      '<ul class="check-list">' + ACCEPTANCE_TESTS.map((t, i) => '<li><input type="checkbox" data-check="btl_tests_done" data-i="' + i + '"' + (tests[i] ? ' checked' : '') + ' id="tc' + i + '"><label for="tc' + i + '">' + esc(t[0]) + '</label><span class="exp">Expected: ' + chip(t[1] === 'Successful' || t[1] === 'Allowed' ? 'approved' : 'denied').replace(/>[^<]+</, '>' + esc(t[1]) + '<') + '</span></li>').join('') + '</ul></div>';
+  } else if (tab === 'changelog') body = '<div class="card">' + changelogHtml() + '</div>';
+  else {
+    body = '<div class="card"><div class="card-h"><h2>Session error log</h2><div class="btn-row"><button class="btn sm" data-act="copy" data-text="' + esc(JSON.stringify(errorLog, null, 2)) + '">Copy as JSON</button><button class="btn sm ghost" data-act="clear-errors">Clear</button></div></div>' +
+      (errorLog.length ? table('errors', [{ key: 'at', label: 'When', render: e => fmtDate(e.at) }, { key: 'ctx', label: 'Context' }, { key: 'code', label: 'Code', render: e => '<span class="mono small">' + esc(e.code) + '</span>' }, { key: 'message', label: 'Message', render: e => '<span class="small">' + esc(e.message) + '</span>' }], errorLog) : '<div class="empty">No errors recorded in this browser.</div>') + '</div>';
+  }
+  const org = inApp && S.org ? '<div class="note" style="margin-bottom:16px">Organization <b>' + esc(S.org.name) + '</b> · <span class="mono">' + esc(ORG_ID) + '</span> · default target <span class="mono">' + esc((S.org.settings || {}).defaultSpanishVariant || '') + '</span> · mode: <b>' + esc(api.mode) + '</b> <button class="btn sm" data-act="edit-org" style="margin-left:8px">Edit organization</button></div>' : '';
+  return '<div class="page-head"><div><h1>Setup &amp; rules</h1><p>Deployment files, provisioning steps and the release test plan for v' + APP.version + '.</p></div></div>' + org +
+    '<nav class="tabs">' + tabs.map(t => '<a href="' + base + t[0] + '" class="' + (tab === t[0] ? 'on' : '') + '">' + t[1] + '</a>').join('') + '</nav>' + body;
+}
+function changelogHtml() {
+  return '<h2>Changelog</h2><h3 style="margin-top:14px">v1.0 <span class="small muted" style="font-family:var(--sans);font-weight:400">— ' + APP.build + ' · Initial release</span></h3><ul class="small" style="line-height:1.8;padding-left:18px">' +
+    ['Email/password sign-in, password reset, email verification and sign-out', 'Membership-based roles (administrator, reviewer) with activation/deactivation', 'Authors, multiple books, and multiple translation projects per book', 'Manual chapter management with ordering and per-reviewer review status', 'Reviewer 1 / Reviewer 2 assignment with assignedReviewerIds for secure queries', 'Review issues: reviewer submission and editing of their own corrections; admin resolution', 'Project glossary (read-only for reviewers)', 'Manuscript uploads to Firebase Storage — DOCX, PDF, EPUB, TXT, MD up to 25 MB — with version records and authenticated downloads', 'Activity logging and admin activity viewer', 'Setup page with security rules, indexes, firebase.json, CORS, bootstrap steps, acceptance checklist and error log', 'Demo mode with sample data and simulated permissions', 'Sortable columns, responsive layout, light and dark themes'].map(x => '<li>' + esc(x) + '</li>').join('') +
+    '</ul><p class="small muted">Deferred to later releases: AI/DeepL translation, manuscript extraction, automated chapter splitting, side-by-side editor, quality scoring, EPUB generation, n8n automation, reviewer uploads.</p>';
+}
+
+/* ==========================================================================
+   ACTIONS (forms & mutations)
+   ========================================================================== */
+async function authorOptions() { const a = await api.list('authors'); return [['', '— Select author —'], ...a.sort((x, y) => cmp(x.lastName, y.lastName)).map(x => [x.id, authorName(x)])]; }
+async function reviewerOptions() {
+  const m = await api.list('members');
+  return [['', '— Unassigned —'], ...m.filter(x => x.status === 'active').sort((a, b) => cmp(a.displayName, b.displayName)).map(x => [x.uid || x.id, (x.displayName || x.email) + (x.role === 'admin' ? ' (admin)' : '')])];
+}
+
+async function bookForm(id) {
+  const [b, aopts] = await Promise.all([id ? api.get('books', id) : null, authorOptions()]);
+  if (aopts.length === 1) toast('Tip: add an author first so you can link the book.');
+  openForm({
+    title: id ? 'Edit book' : 'New book',
+    fields: [
+      { name: 'title', label: 'Title', required: true, full: true, value: b && b.title },
+      { name: 'subtitle', label: 'Subtitle', full: true, value: b && b.subtitle },
+      { name: 'authorId', label: 'Author', type: 'select', options: aopts, value: b && b.authorId },
+      { name: 'genre', label: 'Genre', type: 'select', options: GENRES, value: (b && b.genre) || 'business' },
+      { name: 'sourceLanguage', label: 'Source language', type: 'select', options: SOURCE_LANGS, value: (b && b.sourceLanguage) || 'en' },
+      { name: 'wordCount', label: 'Word count', type: 'number', min: 0, value: b && b.wordCount },
+      { name: 'copyrightOwner', label: 'Copyright owner', value: b && b.copyrightOwner },
+      { name: 'rightsStatus', label: 'Rights status', type: 'select', options: RIGHTS_STATUS, value: (b && b.rightsStatus) || 'not_requested' },
+      { name: 'status', label: 'Status', type: 'select', options: BOOK_STATUS, value: (b && b.status) || 'active' },
+      ...(id ? [] : [{ name: 'file', label: 'Original manuscript (optional)', type: 'file', help: 'DOCX, PDF, EPUB, TXT or MD — up to 25 MB', full: true }])
+    ],
+    async onSubmit(v) {
+      const file = v.file; delete v.file;
+      if (file) validateFile(file);
+      if (id) {
+        await api.update('books', id, { ...v, updatedAt: api.ts() });
+        await logActivity('book_updated', 'Updated book "' + v.title + '"', { bookId: id });
+        toast('Book updated', 'ok');
+      } else {
+        const nid = uuid();
+        await api.set('books', nid, { ...v, organizationId: ORG_ID, sourceFormat: '', sourceFilePath: '', createdAt: api.ts(), updatedAt: api.ts() });
+        await logActivity('book_created', 'Created book "' + v.title + '"', { bookId: nid });
+        if (file) await uploadBookSource(nid, file, v.title);
+        toast('Book created', 'ok');
+        go('book/' + nid); return;
+      }
+      refresh();
+    }
+  });
+}
+async function uploadBookSource(bookId, file, title) {
+  const { ext, contentType } = validateFile(file);
+  const path = 'organizations/' + ORG_ID + '/books/' + bookId + '/source/original.' + ext;
+  await uploadWithProgress(path, file, contentType);
+  await api.update('books', bookId, { sourceFilePath: path, sourceFormat: ext, updatedAt: api.ts() });
+  await logActivity('book_source_uploaded', 'Uploaded manuscript ' + file.name + (title ? ' for "' + title + '"' : ''), { bookId });
+}
+
+async function authorForm(id) {
+  const a = id ? await api.get('authors', id) : null;
+  openForm({
+    title: id ? 'Edit author' : 'New author',
+    fields: [
+      { name: 'firstName', label: 'First name', required: true, value: a && a.firstName },
+      { name: 'lastName', label: 'Last name', required: true, value: a && a.lastName },
+      { name: 'email', label: 'Email', type: 'email', value: a && a.email },
+      { name: 'website', label: 'Website', value: a && a.website, placeholder: 'https://' },
+      { name: 'country', label: 'Country', value: a && a.country },
+      { name: 'status', label: 'Status', type: 'select', options: AUTHOR_STATUS, value: (a && a.status) || 'prospect' },
+      { name: 'biography', label: 'Biography', type: 'textarea', full: true, value: a && a.biography }
+    ],
+    async onSubmit(v) {
+      const name = v.firstName + ' ' + v.lastName;
+      if (id) { await api.update('authors', id, { ...v, updatedAt: api.ts() }); await logActivity('author_updated', 'Updated author ' + name); }
+      else { await api.set('authors', uuid(), { ...v, createdAt: api.ts(), updatedAt: api.ts() }); await logActivity('author_created', 'Created author ' + name); }
+      toast(id ? 'Author updated' : 'Author created', 'ok'); refresh();
+    }
+  });
+}
+
+async function projectForm(id, bookId) {
+  const [p, books, ropts] = await Promise.all([id ? api.get('translationProjects', id) : null, api.list('books'), reviewerOptions()]);
+  if (!books.length) { toast('Create a book first.', 'bad'); return; }
+  const defVar = (S.org && S.org.settings && S.org.settings.defaultSpanishVariant) || 'es-419';
+  const fields = [
+    { name: 'projectName', label: 'Project name', required: true, full: true, value: p ? p.projectName : 'Spanish Latin America Edition' },
+    { name: 'bookId', label: 'Book', type: 'select', required: true, options: [['', '— Select book —'], ...books.map(b => [b.id, b.title])], value: p ? p.bookId : bookId, disabled: !!p },
+    { name: 'targetVariant', label: 'Target language / variant', type: 'select', options: VARIANTS, value: p ? p.targetVariant : defVar },
+    { name: 'targetTerritories', label: 'Target territories', value: p ? (p.targetTerritories || []).join(', ') : 'MX', help: 'ISO country codes, comma-separated (e.g. MX, CO, AR)' },
+    { name: 'translationMethod', label: 'Translation method', type: 'select', options: METHODS, value: p ? p.translationMethod : 'manual' },
+    { name: 'status', label: 'Status', type: 'select', options: PROJECT_STATUS, value: p ? p.status : 'planning' },
+    { name: 'qualityThreshold', label: 'Quality threshold', type: 'number', min: 0, max: 100, value: p ? p.qualityThreshold : 90 }
+  ];
+  if (!p) fields.push({ name: 'reviewer1Id', label: 'Reviewer 1 — translation accuracy', type: 'select', options: ropts }, { name: 'reviewer2Id', label: 'Reviewer 2 — editorial review', type: 'select', options: ropts });
+  openForm({
+    title: id ? 'Edit translation project' : 'New translation project', fields,
+    async onSubmit(v) {
+      const book = books.find(b => b.id === (p ? p.bookId : v.bookId));
+      const data = {
+        projectName: v.projectName, targetVariant: v.targetVariant, targetLanguage: v.targetVariant.split('-')[0],
+        targetTerritories: v.targetTerritories.split(',').map(s => s.trim().toUpperCase()).filter(Boolean),
+        translationMethod: v.translationMethod, status: v.status, qualityThreshold: v.qualityThreshold ?? 90, updatedAt: api.ts()
+      };
+      if (p) {
+        await api.update('translationProjects', id, data);
+        await logActivity('project_updated', 'Updated project "' + v.projectName + '"', { projectId: id, bookId: p.bookId });
+        toast('Project updated', 'ok'); refresh(); return;
+      }
+      if (v.reviewer1Id && v.reviewer1Id === v.reviewer2Id) throw new AppError('Reviewer 1 and Reviewer 2 must be different people.');
+      const names = Object.fromEntries(ropts);
+      const nid = uuid();
+      await api.set('translationProjects', nid, {
+        ...data, organizationId: ORG_ID, bookId: v.bookId, bookTitle: book ? book.title : '', sourceLanguage: book ? book.sourceLanguage || 'en' : 'en',
+        reviewer1Id: v.reviewer1Id || '', reviewer1Name: v.reviewer1Id ? names[v.reviewer1Id].replace(/ \(admin\)$/, '') : '',
+        reviewer2Id: v.reviewer2Id || '', reviewer2Name: v.reviewer2Id ? names[v.reviewer2Id].replace(/ \(admin\)$/, '') : '',
+        assignedReviewerIds: [v.reviewer1Id, v.reviewer2Id].filter(Boolean), createdAt: api.ts()
+      });
+      await logActivity('project_created', 'Created project "' + v.projectName + '" for "' + (book ? book.title : '') + '"', { projectId: nid, bookId: v.bookId });
+      toast('Translation project created', 'ok'); go('project/' + nid);
+    }
+  });
+}
+async function assignForm(id) {
+  const [p, ropts] = await Promise.all([api.get('translationProjects', id), reviewerOptions()]);
+  openForm({
+    title: 'Assign reviewers',
+    intro: '<b>Reviewer 1</b> checks translation accuracy against the source. <b>Reviewer 2</b> performs the editorial review in the target language. Assigned reviewers can see only this project’s chapters, glossary, issues and working files.',
+    fields: [
+      { name: 'reviewer1Id', label: 'Reviewer 1 — translation accuracy', type: 'select', options: ropts, value: p.reviewer1Id, full: true },
+      { name: 'reviewer2Id', label: 'Reviewer 2 — editorial review', type: 'select', options: ropts, value: p.reviewer2Id, full: true }
+    ],
+    submitLabel: 'Save assignments',
+    async onSubmit(v) {
+      if (v.reviewer1Id && v.reviewer1Id === v.reviewer2Id) throw new AppError('Reviewer 1 and Reviewer 2 must be different people.');
+      const names = Object.fromEntries(ropts), clean = s => (names[s] || '').replace(/ \(admin\)$/, '');
+      await api.update('translationProjects', id, {
+        reviewer1Id: v.reviewer1Id || '', reviewer1Name: v.reviewer1Id ? clean(v.reviewer1Id) : '',
+        reviewer2Id: v.reviewer2Id || '', reviewer2Name: v.reviewer2Id ? clean(v.reviewer2Id) : '',
+        assignedReviewerIds: [v.reviewer1Id, v.reviewer2Id].filter(Boolean), updatedAt: api.ts()
+      });
+      await logActivity('reviewers_assigned', 'Assigned reviewers on "' + p.projectName + '": ' + ([clean(v.reviewer1Id), clean(v.reviewer2Id)].filter(Boolean).join(' and ') || 'none'), { projectId: id, bookId: p.bookId });
+      toast('Reviewers assigned', 'ok'); refresh();
+    }
+  });
+}
+
+async function chapterForm(pid, id) {
+  const chs = await api.list(P(pid) + '/chapters', { orderBy: ['sortOrder', 'asc'] });
+  const c = id ? chs.find(x => x.id === id) : null;
+  const next = chs.reduce((m, x) => Math.max(m, Number(x.chapterNumber) || 0), 0) + 1;
+  openForm({
+    title: id ? 'Edit chapter' : 'Add chapter',
+    fields: [
+      { name: 'chapterNumber', label: 'Chapter number', type: 'number', min: 0, required: true, value: c ? c.chapterNumber : next },
+      { name: 'sourceWordCount', label: 'Source word count', type: 'number', min: 0, value: c ? c.sourceWordCount : '' },
+      { name: 'chapterTitle', label: 'Chapter title', required: true, full: true, value: c && c.chapterTitle },
+      { name: 'status', label: 'Chapter status', type: 'select', options: CHAPTER_STATUS, value: c ? c.status : 'not_started' },
+      { name: 'finalApprovalStatus', label: 'Final approval', type: 'select', options: FINAL_STATUS, value: c ? c.finalApprovalStatus : 'pending' },
+      { name: 'reviewer1Status', label: 'Reviewer 1 status', type: 'select', options: REVIEW_STATUS, value: c ? c.reviewer1Status : 'pending' },
+      { name: 'reviewer2Status', label: 'Reviewer 2 status', type: 'select', options: REVIEW_STATUS, value: c ? c.reviewer2Status : 'pending' },
+      { name: 'sourceText', label: 'Source excerpt / notes (optional)', type: 'textarea', full: true, value: c && c.sourceText, help: 'Keep this short. Full chapter files belong in Storage — Firestore documents are limited to 1 MiB.' }
+    ],
+    async onSubmit(v) {
+      if ((v.sourceText || '').length > 20000) throw new AppError('Source excerpt is too long. Upload the chapter as a file instead.');
+      if (c) {
+        await api.update(P(pid) + '/chapters', id, { ...v, updatedAt: api.ts() });
+        await logActivity('chapter_updated', 'Updated chapter ' + v.chapterNumber + ' "' + v.chapterTitle + '"', { projectId: pid, chapterId: id });
+      } else {
+        const nid = uuid(), maxSort = chs.reduce((m, x) => Math.max(m, Number(x.sortOrder) || 0), 0);
+        await api.set(P(pid) + '/chapters', nid, { ...v, sourceFilePath: '', translationFilePath: '', sortOrder: maxSort + 1, createdAt: api.ts(), updatedAt: api.ts() });
+        await logActivity('chapter_created', 'Created chapter ' + v.chapterNumber + ' "' + v.chapterTitle + '"', { projectId: pid, chapterId: nid });
+      }
+      toast(c ? 'Chapter updated' : 'Chapter added', 'ok'); refresh();
+    }
+  });
+}
+async function moveChapter(pid, id, dir) {
+  const chs = (S.vd && S.vd.chapters) || await api.list(P(pid) + '/chapters', { orderBy: ['sortOrder', 'asc'] });
+  const i = chs.findIndex(c => c.id === id), j = i + dir;
+  if (i < 0 || j < 0 || j >= chs.length) return;
+  const a = chs[i], b = chs[j];
+  let sa = Number(a.sortOrder), sb = Number(b.sortOrder);
+  if (sa === sb) { sa = i + 1; sb = j + 1; }
+  await Promise.all([api.update(P(pid) + '/chapters', a.id, { sortOrder: sb, updatedAt: api.ts() }), api.update(P(pid) + '/chapters', b.id, { sortOrder: sa, updatedAt: api.ts() })]);
+  await logActivity('chapter_reordered', 'Moved "' + a.chapterTitle + '" ' + (dir < 0 ? 'up' : 'down'), { projectId: pid, chapterId: a.id });
+  refresh();
+}
+async function reviewerStatusForm(pid, id) {
+  const p = (S.vd && S.vd.project && S.vd.project.id === pid) ? S.vd.project : await api.get('translationProjects', pid);
+  const role = myRole(p);
+  if (!role) { toast('Only the assigned reviewer can submit a review status.', 'bad'); return; }
+  const c = await api.get(P(pid) + '/chapters', id);
+  const key = role === 'reviewer1' ? 'reviewer1Status' : 'reviewer2Status';
+  openForm({
+    title: 'Review status — ' + c.chapterTitle,
+    intro: 'You are <b>' + (role === 'reviewer1' ? 'Reviewer 1 (translation accuracy)' : 'Reviewer 2 (editorial review)') + '</b>. Choose <i>Approved</i> when the chapter passes your review, or <i>Changes requested</i> and submit corrections from the Review issues tab.',
+    fields: [{ name: 'status', label: 'Your status', type: 'select', options: REVIEW_STATUS, value: c[key] || 'pending', full: true }],
+    submitLabel: 'Submit status',
+    async onSubmit(v) {
+      await api.update(P(pid) + '/chapters', id, { [key]: v.status, updatedAt: api.ts() });
+      await logActivity('review_status_submitted', (role === 'reviewer1' ? 'Reviewer 1' : 'Reviewer 2') + ' set "' + c.chapterTitle + '" to ' + label(v.status), { projectId: pid, chapterId: id, bookId: p.bookId });
+      toast('Status submitted', 'ok'); refresh();
+    }
+  });
+}
+
+async function issueForm(pid, chapterId) {
+  const [p, chs] = await Promise.all([api.get('translationProjects', pid), api.list(P(pid) + '/chapters', { orderBy: ['sortOrder', 'asc'] })]);
+  if (!chs.length) { toast('This project has no chapters yet.', 'bad'); return; }
+  const role = myRole(p) || (S.isAdmin ? 'admin' : null);
+  openForm({
+    title: 'Submit correction', wide: true,
+    intro: 'Submitting to <b>' + esc(p.projectName) + '</b> as ' + (role === 'reviewer1' ? 'Reviewer 1' : role === 'reviewer2' ? 'Reviewer 2' : 'Administrator') + '.',
+    fields: [
+      { name: 'chapterId', label: 'Chapter', type: 'select', required: true, options: chs.map(c => [c.id, c.chapterNumber + '. ' + c.chapterTitle]), value: chapterId || chs[0].id, full: true },
+      { name: 'issueType', label: 'Issue type', type: 'select', options: ISSUE_TYPES, value: role === 'reviewer2' ? 'style' : 'accuracy' },
+      { name: 'severity', label: 'Severity', type: 'select', options: SEVERITY, value: 'minor' },
+      { name: 'originalText', label: 'Original text (source)', type: 'textarea', full: true },
+      { name: 'currentTranslation', label: 'Current translation', type: 'textarea', full: true },
+      { name: 'suggestedCorrection', label: 'Suggested correction', type: 'textarea', required: true, full: true },
+      { name: 'notes', label: 'Notes / explanation', type: 'textarea', full: true }
+    ],
+    submitLabel: 'Submit correction',
+    async onSubmit(v) {
+      const ch = chs.find(c => c.id === v.chapterId);
+      await api.set(P(pid) + '/reviewIssues', uuid(), {
+        ...v, bookId: p.bookId, projectId: pid, chapterTitle: ch ? ch.chapterTitle : '',
+        reviewerId: S.user.uid, reviewerName: S.member.displayName || S.user.email, reviewerRole: role,
+        status: 'open', createdAt: api.ts(), updatedAt: api.ts(), resolvedAt: null
+      });
+      await logActivity('issue_created', 'Reported ' + v.severity + ' ' + v.issueType + ' issue in "' + (ch ? ch.chapterTitle : '') + '"', { projectId: pid, chapterId: v.chapterId, bookId: p.bookId });
+      toast('Correction submitted', 'ok'); refresh();
+    }
+  });
+}
+async function viewIssue(pid, id) {
+  const i = await api.get(P(pid) + '/reviewIssues', id);
+  if (!i) { toast('Issue not found', 'bad'); return; }
+  const mine = i.reviewerId === S.user.uid, editable = mine && ['open', 'withdrawn'].includes(i.status);
+  const box = (l, t) => '<div class="diff-lbl">' + l + '</div><div class="diff-box">' + (t ? esc(t) : '<span class="muted">—</span>') + '</div>';
+  const body = '<div class="modal-b"><div class="btn-row">' + chip(i.status) + chip(i.severity) + '<span class="chip">' + esc(label(i.issueType)) + '</span><span class="small muted">' + esc(i.chapterTitle || '') + ' · ' + esc(i.reviewerName || '') + ' · ' + fmtDate(i.createdAt) + '</span></div>' +
+    box('Original text', i.originalText) + box('Current translation', i.currentTranslation) + box('Suggested correction', i.suggestedCorrection) + box('Notes', i.notes) +
+    (i.adminNotes || i.resolvedAt ? box('Administrator resolution', (i.adminNotes || '') + (i.resolvedAt ? '\n— ' + fmtDate(i.resolvedAt) : '')) : '') + '</div>';
+  const foot = '<div class="modal-f">' + (S.isAdmin ? '<button class="btn danger" data-act="del-issue" data-pid="' + pid + '" data-id="' + id + '">Delete</button><button class="btn primary" data-act="resolve-issue" data-pid="' + pid + '" data-id="' + id + '">Resolve…</button>' : '') +
+    (editable && !S.isAdmin ? '<button class="btn primary" data-act="edit-issue" data-pid="' + pid + '" data-id="' + id + '">Edit my correction</button>' : '') +
+    '<button class="btn" data-act="close-modal">Close</button></div>';
+  modal('Review issue', body, foot, true);
+}
+async function editIssueForm(pid, id) {
+  const i = await api.get(P(pid) + '/reviewIssues', id);
+  openForm({
+    title: 'Edit my correction', wide: true,
+    fields: [
+      { name: 'suggestedCorrection', label: 'Suggested correction', type: 'textarea', required: true, full: true, value: i.suggestedCorrection },
+      { name: 'notes', label: 'Notes', type: 'textarea', full: true, value: i.notes },
+      { name: 'status', label: 'Status', type: 'select', options: [['open', 'Open'], ['withdrawn', 'Withdrawn']], value: i.status }
+    ],
+    async onSubmit(v) {
+      await api.update(P(pid) + '/reviewIssues', id, { ...v, updatedAt: api.ts() });
+      await logActivity('issue_updated', 'Updated correction in "' + i.chapterTitle + '"', { projectId: pid, chapterId: i.chapterId });
+      toast('Correction updated', 'ok'); refresh();
+    }
+  });
+}
+async function resolveIssueForm(pid, id) {
+  const i = await api.get(P(pid) + '/reviewIssues', id);
+  openForm({
+    title: 'Resolve issue',
+    fields: [
+      { name: 'status', label: 'Resolution', type: 'select', options: ISSUE_STATUS, value: i.status === 'open' ? 'resolved' : i.status, full: true },
+      { name: 'adminNotes', label: 'Resolution notes', type: 'textarea', full: true, value: i.adminNotes }
+    ],
+    async onSubmit(v) {
+      const closed = ['resolved', 'rejected', 'accepted'].includes(v.status);
+      await api.update(P(pid) + '/reviewIssues', id, { ...v, resolvedAt: closed ? api.ts() : null, resolvedBy: closed ? S.user.uid : '', updatedAt: api.ts() });
+      await logActivity('issue_resolved', 'Marked issue in "' + i.chapterTitle + '" as ' + v.status, { projectId: pid, chapterId: i.chapterId });
+      toast('Issue updated', 'ok'); refresh();
+    }
+  });
+}
+
+async function termForm(pid, id) {
+  const projects = pid ? null : await api.list('translationProjects');
+  if (!pid && !projects.length) { toast('Create a translation project first.', 'bad'); return; }
+  const g = id ? await api.get(P(pid) + '/glossary', id) : null;
+  openForm({
+    title: id ? 'Edit glossary term' : 'Add glossary term',
+    fields: [
+      ...(pid ? [] : [{ name: 'projectId', label: 'Project', type: 'select', required: true, options: projects.map(p => [p.id, p.projectName + ' (' + p.targetVariant + ')']), full: true }]),
+      { name: 'sourceTerm', label: 'Source term', required: true, value: g && g.sourceTerm },
+      { name: 'targetTerm', label: 'Target term', required: true, value: g && g.targetTerm },
+      { name: 'context', label: 'Context', value: g && g.context },
+      { name: 'approvalStatus', label: 'Approval status', type: 'select', options: GLOSSARY_STATUS, value: g ? g.approvalStatus : 'approved' },
+      { name: 'usageNotes', label: 'Usage notes', type: 'textarea', full: true, value: g && g.usageNotes }
+    ],
+    async onSubmit(v) {
+      const projectId = pid || v.projectId; delete v.projectId;
+      const proj = (projects || []).find(p => p.id === projectId) || (S.vd && S.vd.project) || {};
+      const approvedBy = v.approvalStatus === 'approved' ? S.user.uid : '';
+      if (g) await api.update(P(projectId) + '/glossary', id, { ...v, approvedBy, updatedAt: api.ts() });
+      else await api.set(P(projectId) + '/glossary', uuid(), { ...v, approvedBy, bookId: proj.bookId || '', projectId, createdAt: api.ts(), updatedAt: api.ts() });
+      await logActivity(g ? 'glossary_term_updated' : 'glossary_term_created', (g ? 'Updated' : 'Added') + ' glossary term "' + v.sourceTerm + '" → "' + v.targetTerm + '"', { projectId });
+      toast('Glossary saved', 'ok'); refresh();
+    }
+  });
+}
+
+async function uploadFileForm(pid) {
+  const [p, chs, vers] = await Promise.all([api.get('translationProjects', pid), api.list(P(pid) + '/chapters', { orderBy: ['sortOrder', 'asc'] }), api.list(P(pid) + '/versions')]);
+  openForm({
+    title: 'Upload project file',
+    intro: 'Files are stored at <span class="mono">translationProjects/' + esc(pid.slice(0, 8)) + '…/{folder}/</span>. Allowed: DOCX, PDF, EPUB, TXT, MD — up to 25 MB. Uploading the same chapter + version to the same folder replaces the file.',
+    fields: [
+      { name: 'folder', label: 'Folder', type: 'select', options: FOLDERS.map(f => [f[0], f[1]]), value: 'source' },
+      { name: 'chapterId', label: 'Chapter', type: 'select', options: [['', '— Whole manuscript / none —'], ...chs.map(c => [c.id, c.chapterNumber + '. ' + c.chapterTitle])] },
+      { name: 'versionNumber', label: 'Version', value: '0.1.0', required: true, help: 'Semantic version, e.g. 0.1.0 draft, 0.2.0 Reviewer 1, 1.0.0 approved' },
+      { name: 'description', label: 'Description', placeholder: 'e.g. Initial reviewer corrections' },
+      { name: 'file', label: 'File', type: 'file', required: true, full: true }
+    ],
+    submitLabel: 'Upload',
+    async onSubmit(v) {
+      const { ext, contentType } = validateFile(v.file);
+      if (!/^\d+\.\d+\.\d+$/.test(v.versionNumber)) throw new AppError('Version must look like 0.1.0');
+      const ch = chs.find(c => c.id === v.chapterId), folder = FOLDERS.find(f => f[0] === v.folder);
+      const fileName = ch
+        ? 'chapter_' + pad3(ch.chapterNumber) + (v.folder === 'source' ? '' : '_v' + v.versionNumber) + '.' + ext
+        : slug(v.file.name) + '_v' + v.versionNumber + '.' + ext;
+      const path = 'organizations/' + ORG_ID + '/translationProjects/' + pid + '/' + v.folder + '/' + fileName;
+      await uploadWithProgress(path, v.file, contentType);
+      const existing = vers.find(x => x.storagePath === path);
+      const rec = { bookId: p.bookId, projectId: pid, chapterId: v.chapterId || '', folder: v.folder, versionNumber: v.versionNumber, versionType: folder[2], storagePath: path, fileName, originalName: v.file.name, contentType, size: v.file.size, description: v.description, createdBy: S.user.uid, createdByName: S.member.displayName || S.user.email, createdAt: api.ts() };
+      await api.set(P(pid) + '/versions', existing ? existing.id : uuid(), rec);
+      if (ch) {
+        const patch = v.folder === 'source' ? { sourceFilePath: path } : v.folder !== 'exports' ? { translationFilePath: path } : null;
+        if (patch) await api.update(P(pid) + '/chapters', ch.id, { ...patch, updatedAt: api.ts() });
+      }
+      await logActivity('file_uploaded', 'Uploaded ' + fileName + ' to ' + v.folder, { projectId: pid, chapterId: v.chapterId, bookId: p.bookId });
+      toast('File uploaded', 'ok'); refresh();
+    }
+  });
+}
+
+async function memberForm(id) {
+  const m = id ? await api.get('members', id) : null;
+  openForm({
+    title: id ? 'Edit member' : 'Add member',
+    intro: id ? '' : 'Paste the <b>User UID</b> from Firebase Console → Authentication. The membership document ID will be that UID.',
+    fields: [
+      { name: 'uid', label: 'User UID', required: true, full: true, value: m ? m.uid : '', disabled: !!m },
+      { name: 'displayName', label: 'Display name', required: true, value: m && m.displayName },
+      { name: 'email', label: 'Email', type: 'email', required: true, value: m && m.email },
+      { name: 'role', label: 'Role', type: 'select', options: [['reviewer', 'Reviewer'], ['admin', 'Administrator']], value: m ? m.role : 'reviewer' },
+      { name: 'status', label: 'Status', type: 'select', options: [['active', 'Active'], ['inactive', 'Inactive']], value: m ? m.status : 'active' }
+    ],
+    async onSubmit(v) {
+      const uid = m ? m.uid : v.uid;
+      if (!/^[A-Za-z0-9_-]{6,128}$/.test(uid)) throw new AppError('That does not look like a Firebase UID.');
+      if (!m && await api.get('members', uid)) throw new AppError('A member with this UID already exists.');
+      const data = { uid, displayName: v.displayName, email: v.email, role: v.role, status: v.status, updatedAt: api.ts(), createdAt: m ? m.createdAt : api.ts() };
+      await api.set('members', uid, data);
+      await logActivity(m ? 'member_updated' : 'member_added', (m ? 'Updated' : 'Added') + ' member ' + v.displayName + ' (' + v.role + ', ' + v.status + ')');
+      toast(m ? 'Member updated' : 'Member added', 'ok'); refresh();
+    }
+  });
+}
+
+async function orgForm() {
+  const o = S.org || {};
+  openForm({
+    title: 'Organization settings',
+    fields: [
+      { name: 'name', label: 'Organization name', required: true, full: true, value: o.name },
+      { name: 'defaultLanguage', label: 'Default source language', type: 'select', options: SOURCE_LANGS, value: o.defaultLanguage || 'en' },
+      { name: 'defaultSpanishVariant', label: 'Default target variant', type: 'select', options: VARIANTS, value: (o.settings || {}).defaultSpanishVariant || 'es-419' }
+    ],
+    async onSubmit(v) {
+      const settings = { defaultTargetLanguage: v.defaultSpanishVariant.split('-')[0], defaultSpanishVariant: v.defaultSpanishVariant };
+      await api.updateOrg({ name: v.name, defaultLanguage: v.defaultLanguage, settings });
+      S.org = { ...o, name: v.name, defaultLanguage: v.defaultLanguage, settings };
+      await logActivity('organization_updated', 'Updated organization settings');
+      toast('Organization saved', 'ok'); renderNav(); refresh();
+    }
+  });
+}
+
+/* ---------- action dispatcher ---------- */
+const ACT = {
+  'reload': () => location.reload(),
+  'force-demo': () => { sessionStorage.setItem('btl_force_demo', '1'); location.reload(); },
+  'exit-demo': () => { sessionStorage.removeItem('btl_force_demo'); location.reload(); },
+  'demo-login': d => api.signIn(d.uid),
+  'reset-demo': async () => { if (await confirmBox('Reset demo data', 'Replace all demo records in this browser with the original sample data?', 'Reset')) { api.resetDemo(); toast('Demo data reset', 'ok'); } },
+  'reset-pw': async () => {
+    const email = ($('#login-form') && $('#login-form').elements.email.value.trim()) || '';
+    openForm({ title: 'Reset password', fields: [{ name: 'email', label: 'Account email', type: 'email', required: true, value: email, full: true }], submitLabel: 'Send reset link',
+      async onSubmit(v) { await api.reset(v.email); toast('If that account exists, a reset link is on its way.', 'ok'); } });
+  },
+  'verify': async () => { await api.verify(); toast('Verification email sent', 'ok'); },
+  'signout': async () => { await api.signOut(); location.hash = ''; },
+  'theme': () => {
+    const cur = document.documentElement.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    ls.set('btl_theme', cur === 'dark' ? 'light' : 'dark'); applyTheme();
+  },
+  'side': () => { S.sideOpen = !S.sideOpen; renderNav(); },
+  'changelog': () => modal('About BookTranslationLab', '<div class="modal-b"><p class="small muted" style="margin-top:0">Version ' + APP.version + ' · build ' + APP.build + ' · mode: ' + api.mode + ' · org: <span class="mono">' + esc(ORG_ID) + '</span></p>' + changelogHtml() + '</div>'),
+  'close-modal': () => closeModal(),
+  'sort': d => { const s = S.sort[d.table] || {}; S.sort[d.table] = { key: d.key, dir: s.key === d.key ? -s.dir : 1 }; rerender(); },
+  'copy': async d => { try { await navigator.clipboard.writeText(d.text); toast('Copied', 'ok'); } catch { toast('Copy failed — select the text manually.', 'bad'); } },
+  'copy-tpl': async d => { try { await navigator.clipboard.writeText(tplText(d.tpl)); toast('Copied', 'ok'); } catch { toast('Copy failed — select the text manually.', 'bad'); } },
+  'save-tpl': d => { const blob = new Blob([tplText(d.tpl) + '\n'], { type: 'text/plain' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = d.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 3000); },
+  'reset-check': d => { ls.set(d.key, {}); S.member ? rerender() : showSetupPublic(); },
+  'clear-errors': () => { errorLog.length = 0; ls.set('btl_error_log', []); S.member ? rerender() : showSetupPublic(); },
+  'dl': d => downloadFile(d.path),
+  'new-book': () => bookForm(),
+  'edit-book': d => bookForm(d.id),
+  'del-book': async d => {
+    const projects = await api.list('translationProjects', { where: ['bookId', '==', d.id] });
+    if (projects.length) { toast('This book has ' + projects.length + ' translation project(s). Delete or archive those first.', 'bad'); return; }
+    const b = await api.get('books', d.id);
+    if (!await confirmBox('Delete book', 'Delete <b>' + esc(b.title) + '</b> and its uploaded manuscript? This cannot be undone.')) return;
+    if (b.sourceFilePath) await api.removeFile(b.sourceFilePath);
+    await api.remove('books', d.id);
+    await logActivity('book_deleted', 'Deleted book "' + b.title + '"', { bookId: d.id });
+    toast('Book deleted', 'ok'); go('books');
+  },
+  'book-upload': d => openForm({
+    title: 'Upload original manuscript', submitLabel: 'Upload',
+    intro: 'Stored privately at <span class="mono">books/…/source/original.{ext}</span>. Replacing overwrites the current master file of the same format.',
+    fields: [{ name: 'file', label: 'Manuscript file', type: 'file', required: true, full: true, help: 'DOCX, PDF, EPUB, TXT or MD — up to 25 MB' }],
+    async onSubmit(v) { const b = await api.get('books', d.id); await uploadBookSource(d.id, v.file, b && b.title); toast('Manuscript uploaded', 'ok'); refresh(); }
+  }),
+  'new-author': () => authorForm(),
+  'edit-author': d => authorForm(d.id),
+  'del-author': async d => {
+    const books = await api.list('books', { where: ['authorId', '==', d.id] });
+    if (books.length) { toast('This author is linked to ' + books.length + ' book(s). Reassign them first.', 'bad'); return; }
+    const a = await api.get('authors', d.id);
+    if (!await confirmBox('Delete author', 'Delete <b>' + esc(authorName(a)) + '</b>?')) return;
+    await api.remove('authors', d.id); await logActivity('author_deleted', 'Deleted author ' + authorName(a));
+    toast('Author deleted', 'ok'); refresh();
+  },
+  'new-project': d => projectForm(null, d.book),
+  'edit-project': d => projectForm(d.id),
+  'assign': d => assignForm(d.id),
+  'del-project': async d => {
+    const b = S.vd;
+    if (b.chapters.length || b.issues.length || b.glossary.length || b.versions.length) { toast('Remove this project’s chapters, issues, glossary terms and files first — or set its status to Archived.', 'bad'); return; }
+    if (!await confirmBox('Delete project', 'Delete <b>' + esc(b.project.projectName) + '</b>?')) return;
+    await api.remove('translationProjects', d.id);
+    await logActivity('project_deleted', 'Deleted project "' + b.project.projectName + '"', { projectId: d.id, bookId: b.project.bookId });
+    toast('Project deleted', 'ok'); go('projects');
+  },
+  'new-chapter': d => chapterForm(d.pid),
+  'edit-chapter': d => chapterForm(d.pid, d.id),
+  'ch-move': d => moveChapter(d.pid, d.id, Number(d.dir)),
+  'del-chapter': async d => {
+    const c = S.vd.chapters.find(x => x.id === d.id);
+    const linked = S.vd.issues.filter(i => i.chapterId === d.id).length;
+    if (!await confirmBox('Delete chapter', 'Delete chapter <b>' + esc(c.chapterTitle) + '</b>?' + (linked ? ' It has ' + linked + ' review issue(s), which will remain but lose their chapter link.' : '') + ' Uploaded files are kept in Files &amp; versions.')) return;
+    await api.remove(P(d.pid) + '/chapters', d.id);
+    await logActivity('chapter_deleted', 'Deleted chapter "' + c.chapterTitle + '"', { projectId: d.pid, chapterId: d.id });
+    toast('Chapter deleted', 'ok'); refresh();
+  },
+  'rev-status': d => reviewerStatusForm(d.pid, d.id),
+  'new-issue': d => issueForm(d.pid, d.ch),
+  'view-issue': d => viewIssue(d.pid, d.id),
+  'edit-issue': d => editIssueForm(d.pid, d.id),
+  'resolve-issue': d => resolveIssueForm(d.pid, d.id),
+  'del-issue': async d => {
+    closeModal();
+    if (!await confirmBox('Delete issue', 'Permanently delete this review issue?')) return;
+    await api.remove(P(d.pid) + '/reviewIssues', d.id);
+    await logActivity('issue_deleted', 'Deleted a review issue', { projectId: d.pid });
+    toast('Issue deleted', 'ok'); refresh();
+  },
+  'new-term': d => termForm(d.pid),
+  'edit-term': d => termForm(d.pid, d.id),
+  'del-term': async d => {
+    if (!await confirmBox('Delete term', 'Delete this glossary term?')) return;
+    await api.remove(P(d.pid) + '/glossary', d.id);
+    await logActivity('glossary_term_deleted', 'Deleted a glossary term', { projectId: d.pid });
+    toast('Term deleted', 'ok'); refresh();
+  },
+  'upload-file': d => uploadFileForm(d.pid),
+  'del-file': async d => {
+    const v = S.vd.versions.find(x => x.id === d.id);
+    if (!await confirmBox('Delete file', 'Delete <b>' + esc(v.fileName) + '</b> from Storage and remove its version record?')) return;
+    await api.removeFile(v.storagePath);
+    await api.remove(P(d.pid) + '/versions', d.id);
+    const ch = S.vd.chapters.find(c => c.id === v.chapterId);
+    if (ch) {
+      const patch = {};
+      if (ch.sourceFilePath === v.storagePath) patch.sourceFilePath = '';
+      if (ch.translationFilePath === v.storagePath) patch.translationFilePath = '';
+      if (Object.keys(patch).length) await api.update(P(d.pid) + '/chapters', ch.id, { ...patch, updatedAt: api.ts() });
+    }
+    await logActivity('file_deleted', 'Deleted ' + v.fileName, { projectId: d.pid, chapterId: v.chapterId });
+    toast('File deleted', 'ok'); refresh();
+  },
+  'new-member': () => memberForm(),
+  'edit-member': d => memberForm(d.id),
+  'toggle-member': async d => {
+    const m = await api.get('members', d.id);
+    const status = m.status === 'active' ? 'inactive' : 'active';
+    await api.update('members', d.id, { status, updatedAt: api.ts() });
+    await logActivity('member_updated', (status === 'active' ? 'Activated ' : 'Deactivated ') + m.displayName);
+    toast(m.displayName + (status === 'active' ? ' activated' : ' deactivated'), 'ok'); refresh();
+  },
+  'del-member': async d => {
+    const m = await api.get('members', d.id);
+    if (!await confirmBox('Remove member', 'Remove <b>' + esc(m.displayName) + '</b> from the organization? Their Firebase Auth account is not deleted, but they lose all access. Projects they are assigned to will need a new reviewer.', 'Remove')) return;
+    await api.remove('members', d.id);
+    await logActivity('member_deleted', 'Removed member ' + m.displayName);
+    toast('Member removed', 'ok'); refresh();
+  },
+  'edit-org': () => orgForm()
+};
+
+document.addEventListener('click', async ev => {
+  const el = ev.target.closest('[data-act]');
+  if (ev.target.id === 'scrim' && S.sideOpen) { S.sideOpen = false; renderNav(); return; }
+  if (!el || el.disabled) return;
+  const fn = ACT[el.dataset.act]; if (!fn) return;
+  ev.preventDefault();
+  try { await fn({ ...el.dataset }); } catch (e) { fail(e, el.dataset.act); }
+});
+document.addEventListener('input', ev => {
+  const el = ev.target;
+  if (el.dataset.search) {
+    S.filter[el.dataset.search] = el.value;
+    const v = VIEWS[S.route.view], wrap = $('#tblwrap');
+    if (wrap && S.vd) {
+      if (v && v.tbl) wrap.innerHTML = v.tbl(S.vd);
+      else if (S.route.view === 'project') { const q = el.value.toLowerCase(); wrap.innerHTML = glossTable(S.vd.glossary.filter(g => !q || [g.sourceTerm, g.targetTerm, g.context].join(' ').toLowerCase().includes(q)), false); }
+    }
+  }
+});
+document.addEventListener('change', ev => {
+  const el = ev.target;
+  if (el.dataset.filter) { S.filter[el.dataset.filter] = el.value; rerender(); }
+  if (el.dataset.check) { const st = ls.get(el.dataset.check, {}); st[el.dataset.i] = el.checked; ls.set(el.dataset.check, st); S.member ? rerender() : showSetupPublic(); }
+});
+window.addEventListener('hashchange', () => { if (!S.user && parseHash().view === 'setup') showSetupPublic(); else if (!S.user && api) showLogin(); });
+
+// Expose a tiny debug handle for testing in the console.
+window.BTL = { APP, get mode() { return api && api.mode; }, state: S };
+
+boot();
+</script>
+</body>
+</html>

@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <!--
 ================================================================================
-  BookTranslationLab — booktranslationlab_v1.0.html
-  Version: 1.0   |   Build date: 2026-11-07   |   Owner: Thinkezly (CJ)
+  BookTranslationLab — booktranslationlab_v1.1.html
+  Version: 1.1   |   Build date: 2026-11-07   |   Owner: Thinkezly (CJ)
 --------------------------------------------------------------------------------
   Multi-book translation & publishing management system.
   Single-file HTML app · Firebase Auth (email/password) · Cloud Firestore ·
@@ -19,6 +19,20 @@
     Until configured, the app runs in Demo mode (browser-local sample data).
 
   CHANGELOG
+    v1.1 (2026-11-07) — Translation workspace
+      • Side-by-side source/translation workspace per chapter, segmented
+        by paragraph (or sentence); autosave, Ctrl+Enter save & next
+      • Import chapter text: paste, DOCX/TXT/MD from computer, or the
+        chapter file already in Storage (DOCX via mammoth.js, in-browser)
+      • Import a translation and align it to existing paragraphs
+      • Glossary highlighting in source text + missing-term warnings
+      • Reviewers suggest corrections per paragraph (pre-filled issue);
+        admin "Apply to translation" accepts a suggestion in one click
+      • Chapter progress (translated / total) and auto chapter status
+      • Export translation (.txt) and bilingual sheet (.csv)
+      • Fixes: clickable project/chapter names, valid cors.json download,
+        20-second download timeout with CORS guidance
+      • REQUIRES re-publishing firestore.rules (adds chapters/segments)
     v1.0 (2026-11-07) — Initial release
       • Email/password sign-in, password reset, email verification, sign-out
       • Membership-based roles (admin / reviewer), account activation toggle
@@ -43,7 +57,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="app-version" content="1.0">
+<meta name="app-version" content="1.1">
 <title>BookTranslationLab</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -191,7 +205,7 @@ tbody tr:hover td{background:color-mix(in srgb,var(--surface-2) 55%,transparent)
 td .t-title{font-weight:600}
 td .t-sub{font-size:12.5px;color:var(--muted)}
 td.act{white-space:nowrap;text-align:right}
-td a.rowlink{color:var(--ink);font-weight:600;text-decoration:none}
+td a.rowlink{color:var(--ink);font-weight:600;text-decoration:underline;text-decoration-color:var(--line-2);text-underline-offset:3px}
 td a.rowlink:hover{color:var(--accent);text-decoration:underline}
 .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
 .toolbar input[type=search]{max-width:280px}
@@ -230,6 +244,24 @@ pre.code{background:var(--surface-2);border:1px solid var(--line);border-radius:
 .diff-box{background:var(--surface-2);border-radius:8px;padding:10px 12px;font-size:14px;white-space:pre-wrap;word-break:break-word}
 .diff-lbl{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600;margin:12px 0 4px}
 
+/* ---------- translation workspace ---------- */
+.ws{border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+.ws-head,.ws-row{display:grid;grid-template-columns:40px minmax(0,1fr) minmax(0,1fr);gap:0 18px;padding:12px 16px}
+.ws-head{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600;background:var(--surface-2);border-bottom:1px solid var(--line);border-radius:var(--r) var(--r) 0 0;padding-top:9px;padding-bottom:9px}
+.ws-row{border-bottom:1px solid var(--line)}
+.ws-row:last-child{border-bottom:none}
+.ws-row:focus-within{background:color-mix(in srgb,var(--accent-soft) 35%,transparent)}
+.ws-n{color:var(--muted);font-family:var(--mono);font-size:12px;padding-top:4px}
+.ws-src,.ws-tview{font-family:var(--serif);font-size:16.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word}
+.ws-t{font-family:var(--serif);font-size:16.5px;line-height:1.6;min-height:64px;field-sizing:content;resize:vertical;background:var(--bg)}
+.ws-meta{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin-top:6px;font-size:12.5px;color:var(--muted);min-height:18px}
+.ws-meta .btn{font-size:12.5px}
+mark.gl{background:var(--warn-soft);color:inherit;border-bottom:1px dotted var(--warn);padding:0 1px;border-radius:2px;cursor:help}
+.ws-warn{color:var(--warn)}
+.ws-iss{background:var(--accent-soft);color:var(--accent);border:none;border-radius:99px;padding:2px 9px;font-size:12px;cursor:pointer;font-weight:500}
+.ws-nav{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.ws-lbl{display:none}
+
 /* ---------- responsive ---------- */
 @media (max-width: 900px){
   .shell{grid-template-columns:1fr}
@@ -256,6 +288,9 @@ pre.code{background:var(--surface-2);border:1px solid var(--line);border-radius:
   h1{font-size:24px}
   dl.meta{grid-template-columns:1fr}
   dl.meta dt{margin-top:6px}
+  .ws-head{display:none}
+  .ws-row{grid-template-columns:minmax(0,1fr);gap:6px;padding:14px}
+  .ws-lbl{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;font-family:var(--sans);margin-bottom:2px}
 }
 </style>
 </head>
@@ -265,7 +300,7 @@ pre.code{background:var(--surface-2);border:1px solid var(--line);border-radius:
 
 <!-- ======================= Embedded deployment files ======================= -->
 <script type="text/plain" id="tpl-firestore-rules">rules_version = '2';
-// BookTranslationLab v1.0 — firestore.rules
+// BookTranslationLab v1.1 — firestore.rules
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -345,6 +380,12 @@ service cloud.firestore {
               && reviewStatus(request.resource.data.reviewer1Status))
           || (isReviewer2(orgId, projectId) && onlyChanged(['reviewer2Status', 'updatedAt'])
               && reviewStatus(request.resource.data.reviewer2Status));
+
+        // SEGMENTS (v1.1) — paragraph-level source/translation text
+        match /segments/{segmentId} {
+          allow read: if isAdmin(orgId) || isAssignedReviewer(orgId, projectId);
+          allow write: if isAdmin(orgId);
+        }
       }
 
       // GLOSSARY
@@ -394,7 +435,7 @@ service cloud.firestore {
 }
 </script>
 <script type="text/plain" id="tpl-storage-rules">rules_version = '2';
-// BookTranslationLab v1.0 — storage.rules
+// BookTranslationLab v1.1 — storage.rules
 service firebase.storage {
   match /b/{bucket}/o {
 
@@ -488,14 +529,12 @@ service firebase.storage {
 </script>
 <script type="text/plain" id="tpl-cors">[
   {
-    "origin": ["https://YOUR-SITE.netlify.app", "http://localhost:5500", "http://127.0.0.1:5500"],
-    "method": ["GET"],
+    "origin": ["https://YOUR-SITE.netlify.app"],
+    "method": ["GET", "HEAD"],
+    "responseHeader": ["Content-Type", "Content-Disposition"],
     "maxAgeSeconds": 3600
   }
 ]
-
-# Authenticated downloads use the Storage SDK (getBlob), which needs CORS on the bucket:
-#   gsutil cors set cors.json gs://YOUR_PROJECT_ID.firebasestorage.app
 </script>
 
 <!-- ============================== Application ============================== -->
@@ -505,24 +544,24 @@ service firebase.storage {
    ========================================================================== */
 
 /* ---------- CONFIGURATION ---------- */
-const APP = { name: 'BookTranslationLab', version: '1.0', build: '2026-11-07' };
+const APP = { name: 'BookTranslationLab', version: '1.1', build: '2026-11-07' };
 
 // Replace these placeholders with the web app config from
 // Firebase Console → Project settings → Your apps → Web app.
 const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyAr1Jo0JeV6UpqljOIfuvvdJCVIDCQToqo",
-  authDomain: "booktranslationlab.firebaseapp.com",
-  projectId: "booktranslationlab",
-  storageBucket: "booktranslationlab.firebasestorage.app",
-  messagingSenderId: "432581214553",
-  appId: "1:432581214553:web:bbc4deb2080afdc0710c48",
-  measurementId: "G-X80YVTNHKN"
+  apiKey: 'YOUR_API_KEY',
+  authDomain: 'YOUR_PROJECT_ID.firebaseapp.com',
+  projectId: 'YOUR_PROJECT_ID',
+  storageBucket: 'YOUR_PROJECT_ID.firebasestorage.app',
+  messagingSenderId: 'YOUR_SENDER_ID',
+  appId: 'YOUR_APP_ID'
 };
 // Firestore document ID of your organization: organizations/{ORG_ID}
 const ORG_ID = 'booktranslationlab';
 // Set true to use the local Firebase Emulator Suite (auth 9099, firestore 8080, storage 9199).
 const USE_EMULATORS = false;
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.2';
+const MAMMOTH_URL = 'https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js';
 const IS_CONFIGURED = !String(FIREBASE_CONFIG.apiKey).startsWith('YOUR_');
 
 /* ---------- DOMAIN CONSTANTS ---------- */
@@ -705,6 +744,16 @@ async function createFirebaseApi() {
     async set(col, id, data) { await FS.setDoc(d(col, id), data); return id; },
     update: (col, id, data) => FS.updateDoc(d(col, id), data),
     remove: (col, id) => FS.deleteDoc(d(col, id)),
+    async batch(ops) {
+      for (let i = 0; i < ops.length; i += 450) {
+        const b = FS.writeBatch(db);
+        ops.slice(i, i + 450).forEach(o => {
+          const ref = d(o.col, o.id);
+          if (o.type === 'delete') b.delete(ref); else if (o.type === 'update') b.update(ref, o.data); else b.set(ref, o.data);
+        });
+        await b.commit();
+      }
+    },
     upload(path, file, contentType, onProg) {
       return new Promise((res, rej) => {
         const task = ST.uploadBytesResumable(ST.ref(st, path), file, { contentType });
@@ -720,7 +769,7 @@ async function createFirebaseApi() {
    DATA LAYER — Demo adapter (browser-local; simulates the security rules)
    ========================================================================== */
 function createDemoApi() {
-  const KEY = 'btl_demo_v1';
+  const KEY = 'btl_demo_v11';
   let store = ls.get(KEY, null);
   if (!store) { store = seedDemo(); ls.set(KEY, store); }
   const files = new Map();
@@ -751,7 +800,7 @@ function createDemoApi() {
       if (op === 'read' || op === 'list') return;
       if (parts.length === 1) deny();
       const sub = parts[2], keys = Object.keys(data || {});
-      if (sub === 'chapters' && op === 'update') {
+      if (sub === 'chapters' && parts.length === 3 && op === 'update') {
         const k = p.reviewer1Id === current.uid ? 'reviewer1Status' : p.reviewer2Id === current.uid ? 'reviewer2Status' : null;
         if (k && keys.every(x => x === k || x === 'updatedAt') && REVIEW_STATUS.includes(data[k])) return;
       }
@@ -807,6 +856,17 @@ function createDemoApi() {
       guard('update', c, id, data, ex); Object.assign(ex, clone(data)); save();
     },
     async remove(c, id) { await tick(); guard('delete', c, id); delete col(c)[id]; save(); },
+    async batch(ops) {
+      for (const o of ops) {
+        if (o.type === 'delete') { guard('delete', o.col, o.id); delete col(o.col)[o.id]; }
+        else if (o.type === 'update') {
+          const ex = col(o.col)[o.id];
+          if (!ex) { const e = new Error('No document to update.'); e.code = 'not-found'; throw e; }
+          guard('update', o.col, o.id, o.data, ex); Object.assign(ex, clone(o.data));
+        } else { guard(col(o.col)[o.id] ? 'update' : 'create', o.col, o.id, o.data); col(o.col)[o.id] = clone(o.data); }
+      }
+      await tick(); save();
+    },
     async upload(path, file, contentType, onProg) {
       fileGuard('write', path);
       if (!Object.values(FILE_TYPES).includes(contentType) || file.size >= MAX_UPLOAD) { const e = new Error('Rejected by storage rules'); e.code = 'storage/unauthorized'; throw e; }
@@ -854,6 +914,28 @@ function seedDemo() {
     [c2]: ch(c2, 2, 'Finding Your Audience', 1850, 'in_review', 'in_progress', 'pending', 'pending'),
     [c3]: ch(c3, 3, 'Building the Funnel', 1950, 'translated', 'pending', 'pending', 'pending')
   };
+  const seg1 = [
+    ['Lead generation is the lifeblood of every business.', 'La generación de clientes es la sangre de cada negocio.'],
+    ['Without a steady flow of new prospects, even the best product will struggle to grow.', 'Sin un flujo constante de nuevos prospectos, incluso el mejor producto tendrá dificultades para crecer.'],
+    ['In this book, you will learn how to build a sales funnel that works while you sleep.', 'En este libro, aprenderás a construir un embudo de ventas que funcione mientras duermes.'],
+    ['Every chapter ends with a clear call to action you can apply the same day.', ''],
+    ["Let's start by understanding who your audience really is.", '']
+  ];
+  const seg2 = [
+    ['Your audience is not everyone. It is the specific group of people whose problem you solve best.', ''],
+    ['Start by writing down the three questions your best customers asked before they bought.', ''],
+    ['Those questions are the foundation of your lead generation strategy.', '']
+  ];
+  const segIds = {};
+  const mkSegs = (cid, rows) => {
+    const out = {};
+    rows.forEach((x, i) => { const id = uuid(); if (i === 0) segIds[cid] = id; out[id] = { index: i, sourceText: x[0], targetText: x[1], status: x[1] ? 'translated' : 'untranslated', updatedBy: x[1] ? A : '', createdAt: t(6), updatedAt: t(4) }; });
+    const chap = cols['translationProjects/' + p1 + '/chapters'][cid];
+    chap.segmentCount = rows.length; chap.translatedCount = rows.filter(x => x[1]).length;
+    return out;
+  };
+  cols['translationProjects/' + p1 + '/chapters/' + c1 + '/segments'] = mkSegs(c1, seg1);
+  cols['translationProjects/' + p1 + '/chapters/' + c2 + '/segments'] = mkSegs(c2, seg2);
   const g = (s, tt, ctx, notes, st) => ({ bookId: b1, projectId: p1, sourceTerm: s, targetTerm: tt, context: ctx, usageNotes: notes, approvalStatus: st, approvedBy: st === 'approved' ? A : '', createdAt: t(20), updatedAt: t(20) });
   cols['translationProjects/' + p1 + '/glossary'] = {
     [uuid()]: g('Lead Generation', 'Generación de prospectos', 'Business marketing', 'Use consistently throughout the manuscript.', 'approved'),
@@ -861,7 +943,7 @@ function seedDemo() {
     [uuid()]: g('Call to action', 'Llamado a la acción', 'Marketing copy', 'Avoid "llamada a la acción" (Spain).', 'proposed')
   };
   cols['translationProjects/' + p1 + '/reviewIssues'] = {
-    [uuid()]: { bookId: b1, projectId: p1, chapterId: c1, chapterTitle: 'Introduction', reviewerId: R1, reviewerName: 'Reviewer One', reviewerRole: 'reviewer1', issueType: 'terminology', severity: 'major', originalText: 'Lead generation is the lifeblood of every business.', currentTranslation: 'La generación de clientes es la sangre de cada negocio.', suggestedCorrection: 'La generación de prospectos es el motor de todo negocio.', notes: 'Use the approved glossary term; "sangre" reads unnaturally in es-419.', status: 'open', createdAt: t(3), updatedAt: t(3), resolvedAt: null }
+    [uuid()]: { bookId: b1, projectId: p1, chapterId: c1, chapterTitle: 'Introduction', segmentId: segIds[c1], segmentIndex: 0, reviewerId: R1, reviewerName: 'Reviewer One', reviewerRole: 'reviewer1', issueType: 'terminology', severity: 'major', originalText: 'Lead generation is the lifeblood of every business.', currentTranslation: 'La generación de clientes es la sangre de cada negocio.', suggestedCorrection: 'La generación de prospectos es el motor de todo negocio.', notes: 'Use the approved glossary term; "sangre" reads unnaturally in es-419.', status: 'open', createdAt: t(3), updatedAt: t(3), resolvedAt: null }
   };
   cols.activityLogs = {
     [uuid()]: { userId: A, userName: 'CJ (Administrator)', action: 'project_created', bookId: b1, projectId: p1, description: 'Created project "Spanish Latin America Edition"', createdAt: t(25) },
@@ -925,7 +1007,7 @@ async function route() {
   const requested = location.hash;
   let v = S.route.view;
   if (!VIEWS[v] || (ADMIN_ONLY.includes(v) && !S.isAdmin)) { v = 'dashboard'; S.route = { view: v }; }
-  S.sideOpen = false; renderNav();
+  S.sideOpen = false; closeModal(); renderNav();
   const main = $('#main');
   main.innerHTML = '<div class="loading">Loading…</div>';
   window.scrollTo(0, 0);
@@ -1031,7 +1113,7 @@ function renderNav() {
       a('dashboard', 'Dashboard', 'dashboard', v === 'dashboard') +
       a('books', 'Books', 'books', v === 'books' || v === 'book') +
       a('authors', 'Authors', 'authors', v === 'authors') +
-      a('projects', 'Translation projects', 'projects', v === 'projects' || v === 'project') +
+      a('projects', 'Translation projects', 'projects', v === 'projects' || v === 'project' || v === 'workspace') +
       a('issues', 'Review issues', 'issues', v === 'issues') +
       a('glossary', 'Glossary', 'glossary', v === 'glossary') +
       '<div class="nav-h">Administration</div>' +
@@ -1044,7 +1126,7 @@ function renderNav() {
       a('issues', 'My corrections', 'issues', v === 'issues') +
       a('glossary', 'Glossary', 'glossary', v === 'glossary') +
       '<div class="nav-h">Assigned projects</div>' +
-      (S.myProjects.length ? S.myProjects.map(p => a('project/' + p.id, p.projectName, 'book', v === 'project' && S.route.id === p.id)).join('') : '<div class="small muted" style="padding:4px 10px">No projects assigned yet.</div>');
+      (S.myProjects.length ? S.myProjects.map(p => a('project/' + p.id, p.projectName, 'book', (v === 'project' || v === 'workspace') && S.route.id === p.id)).join('') : '<div class="small muted" style="padding:4px 10px">No projects assigned yet.</div>');
   }
   side.className = 'side' + (S.sideOpen ? ' open' : '');
   side.innerHTML = brandHtml() + '<nav class="nav">' + nav + '</nav>' +
@@ -1085,7 +1167,7 @@ function fieldHtml(f) {
   } else if (f.type === 'textarea') {
     input = '<textarea name="' + f.name + '"' + req + dis + (f.rows ? ' rows="' + f.rows + '"' : '') + '>' + esc(v) + '</textarea>';
   } else if (f.type === 'file') {
-    input = '<input type="file" name="' + f.name + '" accept=".docx,.pdf,.epub,.txt,.md"' + req + '>';
+    input = '<input type="file" name="' + f.name + '" accept="' + (f.accept || '.docx,.pdf,.epub,.txt,.md') + '"' + req + '>';
   } else {
     input = '<input type="' + (f.type || 'text') + '" name="' + f.name + '" value="' + esc(v) + '"' + req + dis + (f.min != null ? ' min="' + f.min + '"' : '') + (f.max != null ? ' max="' + f.max + '"' : '') + (f.placeholder ? ' placeholder="' + esc(f.placeholder) + '"' : '') + '>';
   }
@@ -1154,10 +1236,15 @@ async function uploadWithProgress(path, file, contentType) {
     await api.upload(path, file, contentType, p => { const pct = Math.round(p * 100) + '%'; bar.querySelector('i').style.width = pct; const s = bar.querySelector('#up-pct'); if (s) s.textContent = pct; });
   } finally { bar.remove(); }
 }
+const DL_TIMEOUT_MSG = 'Download timed out. This is usually the Storage CORS setting — see Setup & rules → Storage CORS, and check the browser console (F12).';
+function withTimeout(promise, ms, msg) {
+  let t;
+  return Promise.race([promise, new Promise((_, rej) => { t = setTimeout(() => rej(new AppError(msg, 'timeout')), ms); })]).finally(() => clearTimeout(t));
+}
 async function downloadFile(path, name) {
   try {
     toast('Preparing download…');
-    const blob = await api.download(path);
+    const blob = await withTimeout(api.download(path), 20000, DL_TIMEOUT_MSG);
     const url = URL.createObjectURL(blob), a = document.createElement('a');
     a.href = url; a.download = name || path.split('/').pop(); document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
@@ -1258,11 +1345,11 @@ function reviewerDashboard(d) {
     '<div class="card-h"><h2>Chapters awaiting your review</h2></div>' +
     table('rev-await', [
       { key: 'chapterNumber', label: '#', sort: c => c.chapterNumber },
-      { key: 'chapterTitle', label: 'Chapter', render: c => '<a class="rowlink" href="#/project/' + c._p.id + '/chapters">' + esc(c.chapterTitle) + '</a><div class="t-sub">' + esc(c._p.projectName) + '</div>' },
+      { key: 'chapterTitle', label: 'Chapter', render: c => '<a class="rowlink" href="#/workspace/' + c._p.id + '/' + c.id + '">' + esc(c.chapterTitle) + '</a><div class="t-sub">' + esc(c._p.projectName) + '</div>' },
       { key: 'sourceWordCount', label: 'Words', render: c => num(c.sourceWordCount) },
       { key: 'status', label: 'Chapter status', render: c => chip(c.status) },
       { key: '_mine', label: 'Your status', sort: c => c[c._k], render: c => chip(c[c._k] || 'pending') },
-      { key: 'x', label: '', nosort: true, cls: 'act', render: c => '<button class="btn sm" data-act="rev-status" data-pid="' + c._p.id + '" data-id="' + c.id + '">Update status</button>' }
+      { key: 'x', label: '', nosort: true, cls: 'act', render: c => '<a class="btn sm primary" href="#/workspace/' + c._p.id + '/' + c.id + '">Review text</a> <button class="btn sm" data-act="rev-status" data-pid="' + c._p.id + '" data-id="' + c.id + '">Update status</button>' }
     ], awaiting, 'All assigned chapters are approved. Nice work.') +
     '<div class="card-h" style="margin-top:26px"><h2>Your submitted corrections</h2><a href="#/issues" class="small">View all</a></div>' +
     issueTable('rev-mine', mine.slice(0, 10), true);
@@ -1409,15 +1496,17 @@ function projChapters(d) {
   const fileBtn = (path, t) => path ? '<button class="btn sm ghost" data-act="dl" data-path="' + esc(path) + '" title="Download ' + t + '">⬇ ' + t + '</button>' : '';
   const rows = d.chapters.map((c, i) => ({ ...c, _i: i, _n: d.chapters.length }));
   const actions = c => {
-    if (S.isAdmin) return '<button class="btn sm ghost" data-act="ch-move" data-pid="' + p.id + '" data-id="' + c.id + '" data-dir="-1"' + (c._i === 0 ? ' disabled' : '') + ' title="Move up">↑</button><button class="btn sm ghost" data-act="ch-move" data-pid="' + p.id + '" data-id="' + c.id + '" data-dir="1"' + (c._i === c._n - 1 ? ' disabled' : '') + ' title="Move down">↓</button> <button class="btn sm" data-act="edit-chapter" data-pid="' + p.id + '" data-id="' + c.id + '">Edit</button> <button class="btn sm danger" data-act="del-chapter" data-pid="' + p.id + '" data-id="' + c.id + '">Delete</button>';
-    return '<button class="btn sm" data-act="rev-status" data-pid="' + p.id + '" data-id="' + c.id + '">My status</button> <button class="btn sm" data-act="new-issue" data-pid="' + p.id + '" data-ch="' + c.id + '">Report issue</button>';
+    const open = '<a class="btn sm primary" href="#/workspace/' + p.id + '/' + c.id + '">Open</a> ';
+    if (S.isAdmin) return open + '<button class="btn sm ghost" data-act="ch-move" data-pid="' + p.id + '" data-id="' + c.id + '" data-dir="-1"' + (c._i === 0 ? ' disabled' : '') + ' title="Move up">↑</button><button class="btn sm ghost" data-act="ch-move" data-pid="' + p.id + '" data-id="' + c.id + '" data-dir="1"' + (c._i === c._n - 1 ? ' disabled' : '') + ' title="Move down">↓</button> <button class="btn sm" data-act="edit-chapter" data-pid="' + p.id + '" data-id="' + c.id + '">Edit</button> <button class="btn sm danger" data-act="del-chapter" data-pid="' + p.id + '" data-id="' + c.id + '">Delete</button>';
+    return open + '<button class="btn sm" data-act="rev-status" data-pid="' + p.id + '" data-id="' + c.id + '">My status</button> <button class="btn sm" data-act="new-issue" data-pid="' + p.id + '" data-ch="' + c.id + '">Report issue</button>';
   };
   return '<div class="toolbar" style="justify-content:space-between"><div class="small muted">' + d.chapters.length + ' chapters · ' + num(d.chapters.reduce((s, c) => s + (Number(c.sourceWordCount) || 0), 0)) + ' source words' + (role ? ' · You review as ' + (role === 'reviewer1' ? 'Reviewer 1 (translation accuracy)' : 'Reviewer 2 (editorial)') : '') + '</div>' +
     (S.isAdmin ? '<div class="btn-row"><button class="btn" data-act="upload-file" data-pid="' + p.id + '">Upload chapter file</button><button class="btn primary" data-act="new-chapter" data-pid="' + p.id + '">Add chapter</button></div>' : '') + '</div>' +
     table('chapters', [
       { key: 'sortOrder', label: '#', render: c => '<span class="mono">' + esc(c.chapterNumber) + '</span>' },
-      { key: 'chapterTitle', label: 'Chapter', render: c => '<span class="t-title">' + esc(c.chapterTitle) + '</span><div>' + fileBtn(c.sourceFilePath, 'source') + fileBtn(c.translationFilePath, 'translation') + '</div>' },
+      { key: 'chapterTitle', label: 'Chapter', render: c => '<a class="rowlink" href="#/workspace/' + p.id + '/' + c.id + '">' + esc(c.chapterTitle) + '</a><div>' + fileBtn(c.sourceFilePath, 'source') + fileBtn(c.translationFilePath, 'translation') + '</div>' },
       { key: 'sourceWordCount', label: 'Words', render: c => num(c.sourceWordCount) },
+      { key: 'translatedCount', label: 'Translated', sort: c => c.segmentCount ? (c.translatedCount || 0) / c.segmentCount : -1, render: c => c.segmentCount ? '<span class="mono small">' + (c.translatedCount || 0) + '/' + c.segmentCount + '</span>' : '<span class="muted small">No text</span>' },
       { key: 'status', label: 'Status', render: c => chip(c.status) },
       { key: 'reviewer1Status', label: 'Reviewer 1', render: c => chip(c.reviewer1Status || 'pending') },
       { key: 'reviewer2Status', label: 'Reviewer 2', render: c => chip(c.reviewer2Status || 'pending') },
@@ -1555,6 +1644,263 @@ VIEWS.activity = {
   }
 };
 
+/* ---------- Translation workspace (v1.1) ---------- */
+const SEG = (pid, cid) => P(pid) + '/chapters/' + cid + '/segments';
+const wc = t => (String(t || '').trim().match(/\S+/g) || []).length;
+let mammothPromise = null;
+function loadMammoth() {
+  if (window.mammoth) return Promise.resolve(window.mammoth);
+  if (!mammothPromise) {
+    mammothPromise = new Promise((res, rej) => {
+      const sc = document.createElement('script');
+      sc.src = MAMMOTH_URL; sc.async = true;
+      sc.onload = () => window.mammoth ? res(window.mammoth) : rej(new AppError('DOCX reader failed to load.'));
+      sc.onerror = () => { mammothPromise = null; rej(new AppError('Could not load the DOCX reader. Check your connection, or paste the text instead.')); };
+      document.head.appendChild(sc);
+    });
+  }
+  return mammothPromise;
+}
+async function fileToText(blob, name) {
+  const ext = String(name || '').split('?')[0].split('.').pop().toLowerCase();
+  if (ext === 'txt' || ext === 'md') return blob.text();
+  if (ext === 'docx') {
+    const m = await loadMammoth();
+    const r = await m.extractRawText({ arrayBuffer: await blob.arrayBuffer() });
+    return r.value || '';
+  }
+  throw new AppError('Text import supports DOCX, TXT and MD files. For a PDF or EPUB, open it, copy the chapter text and choose “Paste text”.');
+}
+function splitText(raw, mode) {
+  const text = String(raw || '').replace(/\r\n?/g, '\n').replace(/ /g, ' ').trim();
+  if (!text) return [];
+  let paras = /\n\s*\n/.test(text)
+    ? text.split(/\n\s*\n+/).map(p => p.replace(/\s*\n\s*/g, ' '))
+    : text.split(/\n+/);
+  paras = paras.map(p => p.replace(/^#{1,6}\s+/, '').replace(/[ \t]+/g, ' ').trim()).filter(Boolean);
+  if (mode !== 'sentence') return paras;
+  const out = [];
+  const seg = typeof Intl !== 'undefined' && Intl.Segmenter ? new Intl.Segmenter('en', { granularity: 'sentence' }) : null;
+  paras.forEach(p => {
+    const parts = seg ? [...seg.segment(p)].map(x => x.segment) : p.split(/(?<=[.!?…])\s+(?=["“¿¡(]?[A-ZÁÉÍÓÚÑ0-9])/);
+    parts.map(x => x.trim()).filter(Boolean).forEach(x => out.push(x));
+  });
+  return out;
+}
+function glossHits(text, terms) {
+  const hits = [], low = String(text || '').toLowerCase();
+  terms.slice().sort((a, b) => (b.sourceTerm || '').length - (a.sourceTerm || '').length).forEach(t => {
+    const q = String(t.sourceTerm || '').toLowerCase().trim(); if (!q) return;
+    let i = 0;
+    while ((i = low.indexOf(q, i)) !== -1) {
+      const end = i + q.length;
+      const bounded = !/[a-z0-9]/.test(low[i - 1] || '') && !/[a-z0-9]/.test(low[end] || '');
+      if (bounded && !hits.some(h => i < h.end && end > h.start)) hits.push({ start: i, end, term: t });
+      i = end;
+    }
+  });
+  return hits.sort((a, b) => a.start - b.start);
+}
+function highlightGloss(text, hits) {
+  let out = '', pos = 0;
+  hits.forEach(h => { out += esc(text.slice(pos, h.start)) + '<mark class="gl" title="Glossary: ' + esc(h.term.targetTerm) + '">' + esc(text.slice(h.start, h.end)) + '</mark>'; pos = h.end; });
+  return out + esc(text.slice(pos));
+}
+function glossMissing(target, hits) {
+  const t = String(target || '').toLowerCase(); if (!t.trim()) return [];
+  const uniq = [...new Map(hits.map(h => [h.term.id, h.term])).values()];
+  return uniq.filter(term => term.targetTerm && !t.includes(String(term.targetTerm).toLowerCase()));
+}
+const isDone = s => !!String(s.targetText || '').trim();
+
+VIEWS.workspace = {
+  async load(r) {
+    const pid = r.id, cid = r.tab;
+    const project = await api.get('translationProjects', pid);
+    if (!project) throw new AppError('This translation project does not exist.', 'not-found');
+    const [chapters, issues, glossary] = await Promise.all([
+      api.list(P(pid) + '/chapters', { orderBy: ['sortOrder', 'asc'] }),
+      api.list(P(pid) + '/reviewIssues', { where: ['chapterId', '==', cid] }),
+      api.list(P(pid) + '/glossary')
+    ]);
+    const chapter = chapters.find(c => c.id === cid);
+    if (!chapter) throw new AppError('This chapter does not exist.', 'not-found');
+    let segments;
+    try { segments = await api.list(SEG(pid, cid), { orderBy: ['index', 'asc'] }); }
+    catch (e) {
+      if (e && e.code === 'permission-denied' && S.isAdmin) throw new AppError('Access denied reading chapter text. Publish the v1.1 Firestore rules (Setup & rules → Firestore rules) — they add the new segments collection.');
+      throw e;
+    }
+    return { project, chapters, chapter, segments, issues, glossary: glossary.filter(g => g.approvalStatus === 'approved') };
+  },
+  html(d) {
+    const p = d.project, c = d.chapter, role = myRole(p);
+    const i = d.chapters.findIndex(x => x.id === c.id), prev = d.chapters[i - 1], next = d.chapters[i + 1];
+    const navBtn = (ch, lbl) => ch ? '<a class="btn sm" href="#/workspace/' + p.id + '/' + ch.id + '" title="' + esc(ch.chapterTitle) + '">' + lbl + '</a>' : '<button class="btn sm" disabled>' + lbl + '</button>';
+    const f = S.filter.wsShow || '';
+    const head = '<div class="crumbs">' + (S.isAdmin ? '<a href="#/projects">Translation projects</a> / ' : '<a href="#/dashboard">My dashboard</a> / ') + '<a href="#/project/' + p.id + '/chapters">' + esc(p.projectName) + '</a> / Chapter ' + esc(c.chapterNumber) + '</div>' +
+      '<div class="page-head"><div><h1>' + esc(c.chapterNumber) + '. ' + esc(c.chapterTitle) + '</h1><p><span class="mono">' + esc(p.sourceLanguage) + ' → ' + esc(p.targetVariant) + '</span> · ' + chip(c.status) + (role ? ' <span class="chip accent">You: ' + (role === 'reviewer1' ? 'Reviewer 1 · accuracy' : 'Reviewer 2 · editorial') + '</span>' : '') + '</p></div>' +
+      '<div class="ws-nav">' + navBtn(prev, '← Previous') + navBtn(next, 'Next →') +
+      (S.isAdmin ? '<button class="btn" data-act="ws-import">Import text</button>' : '') +
+      (d.segments.length ? '<button class="btn" data-act="ws-export" data-kind="target">Export .txt</button><button class="btn" data-act="ws-export" data-kind="csv">Bilingual .csv</button>' : '') +
+      (role ? '<button class="btn" data-act="rev-status" data-pid="' + p.id + '" data-id="' + c.id + '">My status: ' + esc(label(c[role === 'reviewer1' ? 'reviewer1Status' : 'reviewer2Status'] || 'pending')) + '</button>' : '') + '</div></div>';
+    if (!d.segments.length) {
+      return head + '<div class="card"><div class="empty">' + (S.isAdmin
+        ? '<h2 style="margin-bottom:8px">No text in this chapter yet</h2><p>Import the source text by pasting it or from a DOCX, TXT or MD file. It is split into paragraphs that you translate side by side.</p><button class="btn primary" data-act="ws-import">Import text</button>'
+        : 'The administrator has not imported this chapter’s text yet.') + '</div></div>';
+    }
+    return head +
+      '<div class="card" style="margin-bottom:14px;padding:14px 18px"><div id="ws-prog">' + wsProgress(d) + '</div></div>' +
+      '<div class="toolbar"><input type="search" placeholder="Search source or translation…" data-search="ws" value="' + esc(S.filter.ws || '') + '">' +
+      '<select data-filter="wsShow"><option value="">All paragraphs</option>' + [['todo', 'Untranslated'], ['issues', 'With open corrections'], ['gloss', 'Glossary warnings']].map(o => '<option value="' + o[0] + '"' + (f === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select>' +
+      '<span class="small muted">' + (S.isAdmin ? 'Edits save when you leave a box · Ctrl+Enter saves and moves to the next paragraph' : 'Click “Suggest correction” on any paragraph to submit a fix') + '</span></div>' +
+      '<div id="tblwrap">' + this.tbl(d) + '</div>';
+  },
+  tbl(d) {
+    const p = d.project, q = (S.filter.ws || '').toLowerCase(), f = S.filter.wsShow || '';
+    const openBy = {};
+    d.issues.filter(x => x.status === 'open' && x.segmentId).forEach(x => { (openBy[x.segmentId] = openBy[x.segmentId] || []).push(x); });
+    const rows = d.segments.map(s => { const hits = glossHits(s.sourceText, d.glossary); return { s, hits, miss: glossMissing(s.targetText, hits), iss: openBy[s.id] || [] }; })
+      .filter(r => (!q || (r.s.sourceText + ' ' + (r.s.targetText || '')).toLowerCase().includes(q))
+        && (!f || (f === 'todo' && !isDone(r.s)) || (f === 'issues' && r.iss.length) || (f === 'gloss' && r.miss.length)));
+    const rowHtml = r => {
+      const s = r.s;
+      const target = S.isAdmin
+        ? '<textarea class="ws-t" data-seg="' + s.id + '" lang="' + esc(p.targetVariant) + '" spellcheck="true" rows="2" placeholder="Type the translation…">' + esc(s.targetText || '') + '</textarea>'
+        : '<div class="ws-tview">' + (isDone(s) ? esc(s.targetText) : '<span class="muted">Not translated yet</span>') + '</div>';
+      const meta = '<span id="st-' + s.id + '">' + (isDone(s) ? '✓ Translated' : 'Untranslated') + '</span>' +
+        r.miss.map(t => '<span class="ws-warn" title="Approved glossary translation not found in this paragraph">⚠ Glossary: “' + esc(t.sourceTerm) + '” → “' + esc(t.targetTerm) + '”</span>').join('') +
+        r.iss.map(x => '<button class="ws-iss" data-act="view-issue" data-pid="' + p.id + '" data-id="' + x.id + '">⚑ ' + esc(x.reviewerName || 'Reviewer') + ' · ' + esc(label(x.issueType)) + '</button>').join('') +
+        (!S.isAdmin ? '<button class="btn sm" data-act="ws-suggest" data-seg="' + s.id + '">Suggest correction</button>' : '');
+      return '<div class="ws-row"><div class="ws-n">' + (s.index + 1) + '</div><div><span class="ws-lbl">Source</span><div class="ws-src">' + highlightGloss(s.sourceText, r.hits) + '</div></div><div><span class="ws-lbl">Translation</span>' + target + '<div class="ws-meta">' + meta + '</div></div></div>';
+    };
+    if (!rows.length) return '<div class="ws"><div class="empty">No paragraphs match.</div></div>';
+    return '<div class="ws"><div class="ws-head"><span>#</span><span>Source (' + esc(p.sourceLanguage) + ')</span><span>Translation (' + esc(p.targetVariant) + ')</span></div>' + rows.map(rowHtml).join('') + '</div>';
+  }
+};
+function wsProgress(d) {
+  const total = d.segments.length, done = d.segments.filter(isDone).length, pct = total ? Math.round(done / total * 100) : 0;
+  const words = d.segments.reduce((n, s) => n + wc(s.sourceText), 0), open = d.issues.filter(x => x.status === 'open').length;
+  return '<div class="btn-row small" style="justify-content:space-between;margin-bottom:6px"><span><b>' + done + '</b> of ' + total + ' paragraphs translated · ' + num(words) + ' source words · ' + open + ' open correction' + (open === 1 ? '' : 's') + '</span><b>' + pct + '%</b></div>' + progressBar(pct);
+}
+
+let wsCountTimer = null;
+function scheduleChapterCounts(d) {
+  if (!S.isAdmin) return;
+  clearTimeout(wsCountTimer);
+  wsCountTimer = setTimeout(async () => {
+    const total = d.segments.length, done = d.segments.filter(isDone).length;
+    const patch = { segmentCount: total, translatedCount: done };
+    const st = d.chapter.status;
+    if (['not_started', 'in_translation', 'translated'].includes(st)) patch.status = done === 0 ? 'not_started' : done === total ? 'translated' : 'in_translation';
+    try { await api.update(P(d.project.id) + '/chapters', d.chapter.id, { ...patch, updatedAt: api.ts() }); Object.assign(d.chapter, patch); }
+    catch (e) { logError(e, 'chapter counts'); }
+  }, 1200);
+}
+S.saving = 0;
+async function saveSegment(ta) {
+  const d = S.vd; if (!d || !d.segments) return;
+  const seg = d.segments.find(s => s.id === ta.dataset.seg); if (!seg) return;
+  const val = ta.value.replace(/\s+$/, '');
+  if (val === (seg.targetText || '')) return;
+  const prevText = seg.targetText, st = document.getElementById('st-' + seg.id);
+  seg.targetText = val; seg.status = val.trim() ? 'translated' : 'untranslated';
+  if (st) st.textContent = 'Saving…';
+  S.saving++;
+  try {
+    await api.update(SEG(d.project.id, d.chapter.id), seg.id, { targetText: val, status: seg.status, updatedBy: S.user.uid, updatedAt: api.ts() });
+    if (st) st.textContent = '✓ Saved ' + new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    const pr = document.getElementById('ws-prog'); if (pr) pr.innerHTML = wsProgress(d);
+    scheduleChapterCounts(d);
+  } catch (e) {
+    seg.targetText = prevText; if (st) st.textContent = '✕ Not saved';
+    fail(e, 'save segment');
+  } finally { S.saving--; }
+}
+
+async function wsImportForm() {
+  const d = S.vd, c = d.chapter, has = d.segments.length;
+  const methods = [['paste', 'Paste text'], ['file', 'File from my computer (DOCX, TXT, MD)']];
+  if (c.sourceFilePath) methods.push(['stored-source', 'Chapter source file already uploaded (' + c.sourceFilePath.split('/').pop() + ')']);
+  if (c.translationFilePath) methods.push(['stored-translation', 'Chapter translation file already uploaded (' + c.translationFilePath.split('/').pop() + ')']);
+  const fields = [
+    { name: 'column', label: 'Import into', type: 'select', options: [['source', 'Source text (' + d.project.sourceLanguage + ')'], ['target', 'Translation (' + d.project.targetVariant + ') — fills paragraphs in order']], value: has ? 'target' : 'source', full: true },
+    { name: 'method', label: 'From', type: 'select', options: methods, value: 'paste' },
+    { name: 'split', label: 'Split into', type: 'select', options: [['paragraph', 'Paragraphs'], ['sentence', 'Sentences']], value: 'paragraph' },
+    { name: 'text', label: 'Text (for “Paste text”)', type: 'textarea', full: true, rows: 8 },
+    { name: 'file', label: 'File (for “File from my computer”)', type: 'file', accept: '.docx,.txt,.md', full: true }
+  ];
+  if (has) fields.push({ name: 'replace', label: 'If importing source text', type: 'select', options: [['no', 'Keep existing paragraphs (cancel source import)'], ['yes', 'Replace all ' + has + ' existing paragraphs and their translations']], value: 'no', full: true });
+  openForm({
+    title: 'Import chapter text', wide: true, submitLabel: 'Import',
+    intro: 'Text is split at blank lines (or line breaks) into paragraphs. PDF and EPUB can’t be read directly — copy their text and paste it. ' + (has ? '<b>This chapter already has ' + has + ' paragraphs.</b> Importing a translation aligns it to them in order.' : ''),
+    fields,
+    async onSubmit(v) {
+      let raw;
+      if (v.method === 'paste') { if (!v.text) throw new AppError('Paste the text to import.'); raw = v.text; }
+      else if (v.method === 'file') { if (!v.file) throw new AppError('Choose a file to import.'); if (v.file.size >= MAX_UPLOAD) throw new AppError('File is larger than 25 MB.'); raw = await fileToText(v.file, v.file.name); }
+      else { const path = v.method === 'stored-source' ? c.sourceFilePath : c.translationFilePath; const blob = await withTimeout(api.download(path), 20000, DL_TIMEOUT_MSG); raw = await fileToText(blob, path); }
+      const parts = splitText(raw, v.split);
+      if (!parts.length) throw new AppError('No text was found to import.');
+      if (parts.length > 3000) throw new AppError('That is ' + parts.length + ' segments. Import one chapter at a time (3,000 maximum).');
+      const col = SEG(d.project.id, c.id), ops = [];
+      let msg;
+      if (v.column === 'source') {
+        if (has && v.replace !== 'yes') throw new AppError('This chapter already has text. Choose “Replace all…” to overwrite it, or import into Translation instead.');
+        d.segments.forEach(s => ops.push({ type: 'delete', col, id: s.id }));
+        parts.forEach((t, i) => ops.push({ type: 'set', col, id: uuid(), data: { index: i, sourceText: t, targetText: '', status: 'untranslated', updatedBy: S.user.uid, createdAt: api.ts(), updatedAt: api.ts() } }));
+        msg = 'Imported ' + parts.length + ' source paragraphs';
+      } else if (!has) {
+        parts.forEach((t, i) => ops.push({ type: 'set', col, id: uuid(), data: { index: i, sourceText: '', targetText: t, status: 'translated', updatedBy: S.user.uid, createdAt: api.ts(), updatedAt: api.ts() } }));
+        msg = 'Imported ' + parts.length + ' translated paragraphs (no source text yet)';
+      } else {
+        const n = Math.min(has, parts.length);
+        for (let i = 0; i < n; i++) {
+          const t = (i === has - 1 && parts.length > has) ? parts.slice(i).join('\n\n') : parts[i];
+          ops.push({ type: 'update', col, id: d.segments[i].id, data: { targetText: t, status: 'translated', updatedBy: S.user.uid, updatedAt: api.ts() } });
+        }
+        msg = 'Imported translation into ' + n + ' paragraphs';
+        if (parts.length !== has) msg += ' — source has ' + has + ', translation had ' + parts.length + '. Check the alignment';
+      }
+      await api.batch(ops);
+      const segs = await api.list(col, { orderBy: ['index', 'asc'] });
+      const done = segs.filter(isDone).length;
+      const patch = { segmentCount: segs.length, translatedCount: done, updatedAt: api.ts() };
+      if (v.column === 'source') patch.sourceWordCount = segs.reduce((n2, s) => n2 + wc(s.sourceText), 0);
+      if (['not_started', 'in_translation', 'translated'].includes(c.status)) patch.status = done === 0 ? 'not_started' : done === segs.length ? 'translated' : 'in_translation';
+      await api.update(P(d.project.id) + '/chapters', c.id, patch);
+      await logActivity('chapter_text_imported', msg + ' in "' + c.chapterTitle + '"', { projectId: d.project.id, chapterId: c.id, bookId: d.project.bookId });
+      toast(msg, parts.length !== has && has && v.column === 'target' ? '' : 'ok');
+      refresh();
+    }
+  });
+}
+function wsExport(kind) {
+  const d = S.vd, c = d.chapter, p = d.project;
+  const baseName = 'chapter_' + pad3(c.chapterNumber) + '_' + slug(c.chapterTitle);
+  let content, name, type;
+  if (kind === 'csv') {
+    const q = v => '"' + String(v || '').replace(/"/g, '""') + '"';
+    content = '﻿' + ['#', 'Source (' + p.sourceLanguage + ')', 'Translation (' + p.targetVariant + ')'].map(q).join(',') + '\r\n' +
+      d.segments.map(s => [s.index + 1, s.sourceText, s.targetText].map(q).join(',')).join('\r\n');
+    name = baseName + '_bilingual_' + p.targetVariant + '.csv'; type = 'text/csv';
+  } else {
+    content = c.chapterNumber + '. ' + c.chapterTitle + '\n\n' + d.segments.map(s => s.targetText || '').join('\n\n') + '\n';
+    name = baseName + '_' + p.targetVariant + '.txt'; type = 'text/plain';
+  }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([content], { type: type + ';charset=utf-8' })); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+}
+async function applySuggestion(pid, id) {
+  const i = await api.get(P(pid) + '/reviewIssues', id);
+  if (!i || !i.segmentId) throw new AppError('This correction is not linked to a paragraph.');
+  if (!i.suggestedCorrection) throw new AppError('This correction has no suggested text.');
+  await api.update(SEG(pid, i.chapterId), i.segmentId, { targetText: i.suggestedCorrection, status: 'translated', updatedBy: S.user.uid, updatedAt: api.ts() });
+  await api.update(P(pid) + '/reviewIssues', id, { status: 'accepted', adminNotes: ((i.adminNotes ? i.adminNotes + '\n' : '') + 'Applied to the translation in the workspace.'), resolvedAt: api.ts(), resolvedBy: S.user.uid, updatedAt: api.ts() });
+  await logActivity('suggestion_applied', 'Applied ' + (i.reviewerName || 'reviewer') + '’s correction to paragraph ' + ((i.segmentIndex ?? 0) + 1) + ' of "' + i.chapterTitle + '"', { projectId: pid, chapterId: i.chapterId });
+  closeModal(); toast('Correction applied to the translation', 'ok'); refresh();
+}
+
 /* ---------- Setup & rules ---------- */
 VIEWS.setup = { async load() { return {}; }, html() { return setupHtml(true); } };
 function showSetupPublic() {
@@ -1581,11 +1927,11 @@ function setupHtml(inApp) {
     body = '<div class="card"><h2>Create the first administrator</h2><p class="small">The app never lets anyone create their own admin membership. Do this once in the Firebase Console:</p><ol class="small" style="padding-left:18px;line-height:1.8"><li>Authentication → Users → <b>Add user</b> with your email and a password. Copy the <b>User UID</b>.</li><li>Firestore → Start collection <code>organizations</code> → Document ID <code>' + esc(ORG_ID) + '</code> with the fields below (use type <i>timestamp</i> for createdAt).</li><li>Inside that document, start subcollection <code>members</code> → Document ID = <b>your UID</b> with the member fields below.</li><li>Open the app and sign in. You will land on the administrator dashboard.</li></ol></div>' +
       '<div class="grid g2"><div class="card"><div class="card-h"><h3 class="mono">organizations/' + esc(ORG_ID) + '</h3><button class="btn sm" data-act="copy" data-text="' + esc(bootstrapOrg) + '">Copy</button></div><pre class="code">' + esc(bootstrapOrg) + '</pre></div>' +
       '<div class="card"><div class="card-h"><h3 class="mono">…/members/&lt;YOUR_ADMIN_UID&gt;</h3><button class="btn sm" data-act="copy" data-text="' + esc(bootstrapMember) + '">Copy</button></div><pre class="code">' + esc(bootstrapMember) + '</pre></div></div>';
-  } else if (tab === 'firestore') body = codeBlock('tpl-firestore-rules', 'firestore.rules');
+  } else if (tab === 'firestore') body = '<div class="note" style="margin-bottom:12px"><b>v1.1:</b> these rules add <span class="mono">chapters/{chapterId}/segments</span> for the translation workspace. Re-publish them in Firebase Console → Firestore → Rules after upgrading from v1.0.</div>' + codeBlock('tpl-firestore-rules', 'firestore.rules');
   else if (tab === 'storage') body = codeBlock('tpl-storage-rules', 'storage.rules');
   else if (tab === 'indexes') body = '<div class="note" style="margin-bottom:12px">The app’s current queries use only single-field indexes (created automatically). These composite indexes match the specification’s dashboard plan and can be deployed now or when Firebase prompts for them.</div>' + codeBlock('tpl-indexes', 'firestore.indexes.json');
   else if (tab === 'firebasejson') body = codeBlock('tpl-firebase-json', 'firebase.json');
-  else if (tab === 'cors') body = codeBlock('tpl-cors', 'cors.json');
+  else if (tab === 'cors') body = '<div class="note" style="margin-bottom:12px">Downloads use your signed-in session (no public links), so the bucket must allow your site’s address. Replace <span class="mono">YOUR-SITE</span> with your Netlify address, then in Google Cloud Shell run:<pre class="code" style="margin-top:8px">gcloud storage buckets update gs://' + esc(FIREBASE_CONFIG.storageBucket) + ' --cors-file=cors.json\ngcloud storage buckets describe gs://' + esc(FIREBASE_CONFIG.storageBucket) + ' --format=&quot;default(cors_config)&quot;</pre></div>' + codeBlock('tpl-cors', 'cors.json');
   else if (tab === 'tests') {
     const n = ACCEPTANCE_TESTS.filter((t, i) => tests[i]).length;
     body = '<div class="card"><div class="card-h"><h2>Acceptance tests — ' + n + '/' + ACCEPTANCE_TESTS.length + ' passed</h2><button class="btn sm ghost" data-act="reset-check" data-key="btl_tests_done">Reset</button></div><p class="small muted">Run these against a fresh Firebase project (or the Emulator Suite) before moving to the next release. Results are saved in this browser.</p>' +
@@ -1600,9 +1946,11 @@ function setupHtml(inApp) {
     '<nav class="tabs">' + tabs.map(t => '<a href="' + base + t[0] + '" class="' + (tab === t[0] ? 'on' : '') + '">' + t[1] + '</a>').join('') + '</nav>' + body;
 }
 function changelogHtml() {
-  return '<h2>Changelog</h2><h3 style="margin-top:14px">v1.0 <span class="small muted" style="font-family:var(--sans);font-weight:400">— ' + APP.build + ' · Initial release</span></h3><ul class="small" style="line-height:1.8;padding-left:18px">' +
+  const v11 = ['Translation workspace: source and translation side by side for each chapter, paragraph by paragraph, with autosave', 'Import chapter text by pasting, from a DOCX/TXT/MD file, or from the chapter file already uploaded', 'Import an existing translation and align it to the source paragraphs', 'Glossary terms highlighted in the source, with a warning when the approved translation is missing', 'Reviewers suggest corrections on a specific paragraph; administrators apply them in one click', 'Chapter translation progress and automatic chapter status', 'Export the translation (.txt) or a bilingual sheet (.csv)', 'Fixes: clickable project and chapter names, valid cors.json, download timeout with guidance'];
+  return '<h2>Changelog</h2><h3 style="margin-top:14px">v1.1 <span class="small muted" style="font-family:var(--sans);font-weight:400">— ' + APP.build + ' · Translation workspace</span></h3><ul class="small" style="line-height:1.8;padding-left:18px">' + v11.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul><p class="small"><b>Upgrade note:</b> re-publish the Firestore rules from Setup &amp; rules.</p>' +
+    '<h3 style="margin-top:14px">v1.0 <span class="small muted" style="font-family:var(--sans);font-weight:400">— 2026-11-07 · Initial release</span></h3><ul class="small" style="line-height:1.8;padding-left:18px">' +
     ['Email/password sign-in, password reset, email verification and sign-out', 'Membership-based roles (administrator, reviewer) with activation/deactivation', 'Authors, multiple books, and multiple translation projects per book', 'Manual chapter management with ordering and per-reviewer review status', 'Reviewer 1 / Reviewer 2 assignment with assignedReviewerIds for secure queries', 'Review issues: reviewer submission and editing of their own corrections; admin resolution', 'Project glossary (read-only for reviewers)', 'Manuscript uploads to Firebase Storage — DOCX, PDF, EPUB, TXT, MD up to 25 MB — with version records and authenticated downloads', 'Activity logging and admin activity viewer', 'Setup page with security rules, indexes, firebase.json, CORS, bootstrap steps, acceptance checklist and error log', 'Demo mode with sample data and simulated permissions', 'Sortable columns, responsive layout, light and dark themes'].map(x => '<li>' + esc(x) + '</li>').join('') +
-    '</ul><p class="small muted">Deferred to later releases: AI/DeepL translation, manuscript extraction, automated chapter splitting, side-by-side editor, quality scoring, EPUB generation, n8n automation, reviewer uploads.</p>';
+    '</ul><p class="small muted">Deferred to later releases: AI/DeepL translation, automated chapter splitting, manuscript upload history, quality scoring, EPUB generation, n8n automation, reviewer uploads.</p>';
 }
 
 /* ==========================================================================
@@ -1806,20 +2154,20 @@ async function reviewerStatusForm(pid, id) {
   });
 }
 
-async function issueForm(pid, chapterId) {
+async function issueForm(pid, chapterId, pre = {}) {
   const [p, chs] = await Promise.all([api.get('translationProjects', pid), api.list(P(pid) + '/chapters', { orderBy: ['sortOrder', 'asc'] })]);
   if (!chs.length) { toast('This project has no chapters yet.', 'bad'); return; }
   const role = myRole(p) || (S.isAdmin ? 'admin' : null);
   openForm({
     title: 'Submit correction', wide: true,
-    intro: 'Submitting to <b>' + esc(p.projectName) + '</b> as ' + (role === 'reviewer1' ? 'Reviewer 1' : role === 'reviewer2' ? 'Reviewer 2' : 'Administrator') + '.',
+    intro: (pre.segmentId ? 'Paragraph <b>' + (pre.segmentIndex + 1) + '</b> · ' : '') + 'Submitting to <b>' + esc(p.projectName) + '</b> as ' + (role === 'reviewer1' ? 'Reviewer 1' : role === 'reviewer2' ? 'Reviewer 2' : 'Administrator') + '.',
     fields: [
       { name: 'chapterId', label: 'Chapter', type: 'select', required: true, options: chs.map(c => [c.id, c.chapterNumber + '. ' + c.chapterTitle]), value: chapterId || chs[0].id, full: true },
       { name: 'issueType', label: 'Issue type', type: 'select', options: ISSUE_TYPES, value: role === 'reviewer2' ? 'style' : 'accuracy' },
       { name: 'severity', label: 'Severity', type: 'select', options: SEVERITY, value: 'minor' },
-      { name: 'originalText', label: 'Original text (source)', type: 'textarea', full: true },
-      { name: 'currentTranslation', label: 'Current translation', type: 'textarea', full: true },
-      { name: 'suggestedCorrection', label: 'Suggested correction', type: 'textarea', required: true, full: true },
+      { name: 'originalText', label: 'Original text (source)', type: 'textarea', full: true, value: pre.originalText },
+      { name: 'currentTranslation', label: 'Current translation', type: 'textarea', full: true, value: pre.currentTranslation },
+      { name: 'suggestedCorrection', label: 'Suggested correction', type: 'textarea', required: true, full: true, value: pre.suggestedCorrection, help: pre.segmentId ? 'Edit the translation into the version you recommend.' : '' },
       { name: 'notes', label: 'Notes / explanation', type: 'textarea', full: true }
     ],
     submitLabel: 'Submit correction',
@@ -1827,6 +2175,7 @@ async function issueForm(pid, chapterId) {
       const ch = chs.find(c => c.id === v.chapterId);
       await api.set(P(pid) + '/reviewIssues', uuid(), {
         ...v, bookId: p.bookId, projectId: pid, chapterTitle: ch ? ch.chapterTitle : '',
+        segmentId: pre.segmentId && v.chapterId === chapterId ? pre.segmentId : '', segmentIndex: pre.segmentId && v.chapterId === chapterId ? pre.segmentIndex : null,
         reviewerId: S.user.uid, reviewerName: S.member.displayName || S.user.email, reviewerRole: role,
         status: 'open', createdAt: api.ts(), updatedAt: api.ts(), resolvedAt: null
       });
@@ -1840,11 +2189,13 @@ async function viewIssue(pid, id) {
   if (!i) { toast('Issue not found', 'bad'); return; }
   const mine = i.reviewerId === S.user.uid, editable = mine && ['open', 'withdrawn'].includes(i.status);
   const box = (l, t) => '<div class="diff-lbl">' + l + '</div><div class="diff-box">' + (t ? esc(t) : '<span class="muted">—</span>') + '</div>';
-  const body = '<div class="modal-b"><div class="btn-row">' + chip(i.status) + chip(i.severity) + '<span class="chip">' + esc(label(i.issueType)) + '</span><span class="small muted">' + esc(i.chapterTitle || '') + ' · ' + esc(i.reviewerName || '') + ' · ' + fmtDate(i.createdAt) + '</span></div>' +
+  const body = '<div class="modal-b"><div class="btn-row">' + chip(i.status) + chip(i.severity) + '<span class="chip">' + esc(label(i.issueType)) + '</span><span class="small muted">' + esc(i.chapterTitle || '') + (i.segmentId ? ' · paragraph ' + ((i.segmentIndex ?? 0) + 1) : '') + ' · ' + esc(i.reviewerName || '') + ' · ' + fmtDate(i.createdAt) + '</span></div>' +
     box('Original text', i.originalText) + box('Current translation', i.currentTranslation) + box('Suggested correction', i.suggestedCorrection) + box('Notes', i.notes) +
     (i.adminNotes || i.resolvedAt ? box('Administrator resolution', (i.adminNotes || '') + (i.resolvedAt ? '\n— ' + fmtDate(i.resolvedAt) : '')) : '') + '</div>';
   const foot = '<div class="modal-f">' + (S.isAdmin ? '<button class="btn danger" data-act="del-issue" data-pid="' + pid + '" data-id="' + id + '">Delete</button><button class="btn primary" data-act="resolve-issue" data-pid="' + pid + '" data-id="' + id + '">Resolve…</button>' : '') +
     (editable && !S.isAdmin ? '<button class="btn primary" data-act="edit-issue" data-pid="' + pid + '" data-id="' + id + '">Edit my correction</button>' : '') +
+    (S.isAdmin && i.segmentId && i.status === 'open' && i.suggestedCorrection ? '<button class="btn primary" data-act="apply-suggestion" data-pid="' + pid + '" data-id="' + id + '">Apply to translation</button>' : '') +
+    (i.chapterId && !(S.route.view === 'workspace' && S.route.tab === i.chapterId) ? '<a class="btn" href="#/workspace/' + pid + '/' + i.chapterId + '">Open in workspace</a>' : '') +
     '<button class="btn" data-act="close-modal">Close</button></div>';
   modal('Review issue', body, foot, true);
 }
@@ -2115,7 +2466,14 @@ const ACT = {
     await logActivity('member_deleted', 'Removed member ' + m.displayName);
     toast('Member removed', 'ok'); refresh();
   },
-  'edit-org': () => orgForm()
+  'edit-org': () => orgForm(),
+  'ws-import': () => wsImportForm(),
+  'ws-export': d => wsExport(d.kind),
+  'ws-suggest': d => {
+    const v = S.vd, s = v.segments.find(x => x.id === d.seg); if (!s) return;
+    return issueForm(v.project.id, v.chapter.id, { segmentId: s.id, segmentIndex: s.index, originalText: s.sourceText, currentTranslation: s.targetText || '', suggestedCorrection: s.targetText || '' });
+  },
+  'apply-suggestion': d => applySuggestion(d.pid, d.id)
 };
 
 document.addEventListener('click', async ev => {
@@ -2143,6 +2501,21 @@ document.addEventListener('change', ev => {
   if (el.dataset.check) { const st = ls.get(el.dataset.check, {}); st[el.dataset.i] = el.checked; ls.set(el.dataset.check, st); S.member ? rerender() : showSetupPublic(); }
 });
 window.addEventListener('hashchange', () => { if (!S.user && parseHash().view === 'setup') showSetupPublic(); else if (!S.user && api) showLogin(); });
+
+// Translation workspace editor events
+document.addEventListener('focusout', ev => { if (ev.target.classList && ev.target.classList.contains('ws-t')) saveSegment(ev.target); });
+document.addEventListener('keydown', ev => {
+  const ta = ev.target;
+  if (!(ta.classList && ta.classList.contains('ws-t')) || ev.key !== 'Enter' || !(ev.ctrlKey || ev.metaKey)) return;
+  ev.preventDefault();
+  const all = $$('.ws-t'), nxt = all[all.indexOf(ta) + 1];
+  if (nxt) { nxt.focus(); nxt.scrollIntoView({ block: 'center', behavior: 'smooth' }); } else ta.blur();
+});
+document.addEventListener('input', ev => {
+  const ta = ev.target;
+  if (ta.classList && ta.classList.contains('ws-t') && !CSS.supports('field-sizing', 'content')) { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 2 + 'px'; }
+});
+window.addEventListener('beforeunload', ev => { if (S.saving > 0) { ev.preventDefault(); ev.returnValue = ''; } });
 
 // Expose a tiny debug handle for testing in the console.
 window.BTL = { APP, get mode() { return api && api.mode; }, state: S };
